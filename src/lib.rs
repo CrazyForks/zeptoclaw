@@ -11,6 +11,7 @@ pub mod skills;
 pub mod tools;
 pub mod utils;
 
+pub use agent::{AgentLoop, ContextBuilder};
 pub use bus::{InboundMessage, MediaAttachment, MediaType, MessageBus, OutboundMessage};
 pub use config::Config;
 pub use error::{PicoError, Result};
