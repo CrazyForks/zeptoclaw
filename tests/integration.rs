@@ -4,13 +4,17 @@
 //! testing the full message flow, tool execution, session persistence, and
 //! configuration handling.
 
-use picoclaw::{
+use std::sync::Arc;
+use tempfile::tempdir;
+use zeptoclaw::{
     bus::{InboundMessage, MessageBus, OutboundMessage},
     config::Config,
+    security::ShellSecurityConfig,
     session::{Message, SessionManager},
-    tools::{EchoTool, ToolContext, ToolRegistry},
+    tools::filesystem::ReadFileTool,
+    tools::shell::ShellTool,
+    tools::{EchoTool, Tool, ToolContext, ToolRegistry},
 };
-use std::sync::Arc;
 
 // ============================================================================
 // Message Bus Integration Tests
@@ -61,7 +65,8 @@ async fn test_concurrent_message_producers() {
         let channel = channel.to_string();
         let handle = tokio::spawn(async move {
             for i in 0..5 {
-                let msg = InboundMessage::new(&channel, "user", "chat", &format!("{}:{}", channel, i));
+                let msg =
+                    InboundMessage::new(&channel, "user", "chat", &format!("{}:{}", channel, i));
                 bus_clone.publish_inbound(msg).await.unwrap();
             }
         });
@@ -91,7 +96,9 @@ async fn test_concurrent_message_producers() {
 async fn test_tool_execution() {
     let mut registry = ToolRegistry::new();
     registry.register(Box::new(EchoTool));
-    let result = registry.execute("echo", serde_json::json!({"message": "test"})).await;
+    let result = registry
+        .execute("echo", serde_json::json!({"message": "test"}))
+        .await;
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), "test");
 }
@@ -106,7 +113,9 @@ async fn test_tool_registry_multiple_tools() {
     assert_eq!(registry.len(), 1);
 
     // Execute the tool
-    let result = registry.execute("echo", serde_json::json!({"message": "Hello, World!"})).await;
+    let result = registry
+        .execute("echo", serde_json::json!({"message": "Hello, World!"}))
+        .await;
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), "Hello, World!");
 
@@ -175,7 +184,9 @@ async fn test_session_full_conversation() {
     session.add_message(Message::user("What is Rust?"));
 
     // Assistant responds
-    session.add_message(Message::assistant("Rust is a systems programming language focused on safety and performance."));
+    session.add_message(Message::assistant(
+        "Rust is a systems programming language focused on safety and performance.",
+    ));
 
     // User follows up
     session.add_message(Message::user("What are its main features?"));
@@ -186,10 +197,10 @@ async fn test_session_full_conversation() {
     // Load and verify
     let loaded = manager.get_or_create("telegram:chat123").await.unwrap();
     assert_eq!(loaded.messages.len(), 4);
-    assert_eq!(loaded.messages[0].role, picoclaw::session::Role::System);
-    assert_eq!(loaded.messages[1].role, picoclaw::session::Role::User);
-    assert_eq!(loaded.messages[2].role, picoclaw::session::Role::Assistant);
-    assert_eq!(loaded.messages[3].role, picoclaw::session::Role::User);
+    assert_eq!(loaded.messages[0].role, zeptoclaw::session::Role::System);
+    assert_eq!(loaded.messages[1].role, zeptoclaw::session::Role::User);
+    assert_eq!(loaded.messages[2].role, zeptoclaw::session::Role::Assistant);
+    assert_eq!(loaded.messages[3].role, zeptoclaw::session::Role::User);
 }
 
 #[tokio::test]
@@ -201,8 +212,12 @@ async fn test_session_with_tool_calls() {
     session.add_message(Message::user("Echo this: Hello World"));
 
     // Assistant with tool call
-    let tool_call = picoclaw::session::ToolCall::new("call_1", "echo", r#"{"message": "Hello World"}"#);
-    session.add_message(Message::assistant_with_tools("Let me echo that.", vec![tool_call]));
+    let tool_call =
+        zeptoclaw::session::ToolCall::new("call_1", "echo", r#"{"message": "Hello World"}"#);
+    session.add_message(Message::assistant_with_tools(
+        "Let me echo that.",
+        vec![tool_call],
+    ));
 
     // Tool result
     session.add_message(Message::tool_result("call_1", "Hello World"));
@@ -252,7 +267,10 @@ async fn test_session_manager_concurrent_access() {
     for i in 0..5 {
         let manager_clone = Arc::clone(&manager);
         let handle = tokio::spawn(async move {
-            let mut session = manager_clone.get_or_create(&format!("concurrent-{}", i)).await.unwrap();
+            let mut session = manager_clone
+                .get_or_create(&format!("concurrent-{}", i))
+                .await
+                .unwrap();
             session.add_message(Message::user(&format!("Message {}", i)));
             manager_clone.save(&session).await.unwrap();
         });
@@ -337,7 +355,49 @@ fn test_config_provider_settings() {
 
     let openai = config.providers.openai.as_ref().unwrap();
     assert_eq!(openai.api_key, Some("sk-test".to_string()));
-    assert_eq!(openai.api_base, Some("https://api.openai.com/v1".to_string()));
+    assert_eq!(
+        openai.api_base,
+        Some("https://api.openai.com/v1".to_string())
+    );
+}
+
+#[test]
+fn test_config_openai_provider() {
+    let json = r#"{
+        "providers": {
+            "openai": {
+                "api_key": "sk-test-key",
+                "api_base": "https://custom.openai.com/v1"
+            }
+        }
+    }"#;
+
+    let config: Config = serde_json::from_str(json).unwrap();
+
+    let openai = config.providers.openai.as_ref().unwrap();
+    assert_eq!(openai.api_key, Some("sk-test-key".to_string()));
+    assert_eq!(
+        openai.api_base,
+        Some("https://custom.openai.com/v1".to_string())
+    );
+}
+
+#[test]
+fn test_config_openai_provider_minimal() {
+    // Test OpenAI config with just API key (no custom base URL)
+    let json = r#"{
+        "providers": {
+            "openai": {
+                "api_key": "sk-minimal-key"
+            }
+        }
+    }"#;
+
+    let config: Config = serde_json::from_str(json).unwrap();
+
+    let openai = config.providers.openai.as_ref().unwrap();
+    assert_eq!(openai.api_key, Some("sk-minimal-key".to_string()));
+    assert!(openai.api_base.is_none());
 }
 
 #[test]
@@ -378,7 +438,10 @@ async fn test_message_to_session_flow() {
     let received = bus.consume_inbound().await.unwrap();
 
     // Agent adds to session
-    let mut session = session_manager.get_or_create(&received.session_key).await.unwrap();
+    let mut session = session_manager
+        .get_or_create(&received.session_key)
+        .await
+        .unwrap();
     session.add_message(Message::user(&received.content));
 
     // Simulate AI response
@@ -391,7 +454,10 @@ async fn test_message_to_session_flow() {
     bus.publish_outbound(outbound).await.unwrap();
 
     // Verify full flow
-    let saved_session = session_manager.get_or_create("telegram:chat456").await.unwrap();
+    let saved_session = session_manager
+        .get_or_create("telegram:chat456")
+        .await
+        .unwrap();
     assert_eq!(saved_session.messages.len(), 2);
 
     let outgoing = bus.consume_outbound().await.unwrap();
@@ -411,8 +477,12 @@ async fn test_tool_call_flow() {
     session.add_message(Message::user("Echo this: Test message"));
 
     // Simulate LLM deciding to call a tool
-    let tool_call = picoclaw::session::ToolCall::new("call_001", "echo", r#"{"message": "Test message"}"#);
-    session.add_message(Message::assistant_with_tools("I'll echo that for you.", vec![tool_call.clone()]));
+    let tool_call =
+        zeptoclaw::session::ToolCall::new("call_001", "echo", r#"{"message": "Test message"}"#);
+    session.add_message(Message::assistant_with_tools(
+        "I'll echo that for you.",
+        vec![tool_call.clone()],
+    ));
 
     // Execute the tool
     let args: serde_json::Value = tool_call.parse_arguments().unwrap();
@@ -459,4 +529,117 @@ async fn test_multi_channel_sessions() {
     // Verify total session count
     let keys = session_manager.list().await.unwrap();
     assert_eq!(keys.len(), 3);
+}
+
+// ============================================================================
+// Security Integration Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_filesystem_path_traversal_protection() {
+    let dir = tempdir().unwrap();
+    let ctx = ToolContext::new().with_workspace(dir.path().to_str().unwrap());
+    let tool = ReadFileTool;
+
+    // Attempt to read /etc/passwd via traversal
+    let result = tool
+        .execute(serde_json::json!({"path": "../../../etc/passwd"}), &ctx)
+        .await;
+
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("Security violation") || err.contains("escapes workspace"),
+        "Expected security error, got: {}",
+        err
+    );
+}
+
+#[tokio::test]
+async fn test_shell_dangerous_command_blocked() {
+    let tool = ShellTool::new();
+    let ctx = ToolContext::new();
+
+    let result = tool
+        .execute(serde_json::json!({"command": "rm -rf /"}), &ctx)
+        .await;
+
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("Security violation"));
+}
+
+#[tokio::test]
+async fn test_security_config_customization() {
+    // Create tool with custom blocked pattern
+    let config = ShellSecurityConfig::new().block_pattern("custom_forbidden");
+    let tool = ShellTool::with_security(config);
+    let ctx = ToolContext::new();
+
+    // Custom pattern should be blocked
+    let result = tool
+        .execute(
+            serde_json::json!({"command": "echo custom_forbidden"}),
+            &ctx,
+        )
+        .await;
+    assert!(result.is_err());
+
+    // Default tool should allow it
+    let default_tool = ShellTool::new();
+    let result = default_tool
+        .execute(
+            serde_json::json!({"command": "echo custom_forbidden"}),
+            &ctx,
+        )
+        .await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_filesystem_absolute_path_outside_workspace_blocked() {
+    let dir = tempdir().unwrap();
+    let ctx = ToolContext::new().with_workspace(dir.path().to_str().unwrap());
+    let tool = ReadFileTool;
+
+    let result = tool
+        .execute(serde_json::json!({"path": "/etc/passwd"}), &ctx)
+        .await;
+
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_shell_credential_access_blocked() {
+    let tool = ShellTool::new();
+    let ctx = ToolContext::new();
+
+    let result = tool
+        .execute(serde_json::json!({"command": "cat /etc/shadow"}), &ctx)
+        .await;
+
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("Security violation"));
+}
+
+#[tokio::test]
+async fn test_shell_permissive_mode() {
+    let tool = ShellTool::permissive();
+    let ctx = ToolContext::new();
+
+    // In permissive mode, we can run commands that would normally be blocked
+    // We use echo to safely test without actually running dangerous commands
+    let result = tool
+        .execute(
+            serde_json::json!({"command": "echo 'test permissive'"}),
+            &ctx,
+        )
+        .await;
+
+    assert!(result.is_ok());
 }
