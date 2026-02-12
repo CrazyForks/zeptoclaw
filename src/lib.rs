@@ -22,7 +22,13 @@ pub use providers::{
     ChatOptions, ClaudeProvider, LLMProvider, LLMResponse, LLMToolCall, OpenAIProvider,
     ToolDefinition, Usage,
 };
-pub use runtime::{CommandOutput, ContainerConfig, ContainerRuntime, RuntimeError, RuntimeResult};
+pub use runtime::{
+    available_runtimes, create_runtime, CommandOutput, ContainerConfig, ContainerRuntime,
+    DockerRuntime, NativeRuntime, RuntimeError, RuntimeResult,
+};
+
+#[cfg(target_os = "macos")]
+pub use runtime::AppleContainerRuntime;
 pub use security::{validate_path_in_workspace, SafePath, ShellSecurityConfig};
 pub use session::{Message, Role, Session, SessionManager, ToolCall};
 pub use tools::{EchoTool, Tool, ToolContext, ToolRegistry};
