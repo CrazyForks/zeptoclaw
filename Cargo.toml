@@ -55,6 +55,7 @@ tokio-tungstenite = { version = "0.21", features = ["rustls-tls-webpki-roots"] }
 [dev-dependencies]
 tokio-test = "0.4"
 mockall = "0.12"
+tempfile = "3.10"
 
 [profile.release]
 opt-level = "z"
