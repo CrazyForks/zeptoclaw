@@ -1,4 +1,4 @@
-//! Shell tool for PicoClaw
+//! Shell tool for ZeptoClaw
 //!
 //! This module provides a tool for executing shell commands. Commands are run
 //! in a subprocess with configurable timeout and workspace directory support.
@@ -10,6 +10,7 @@ use std::time::Duration;
 use tokio::process::Command;
 
 use crate::error::{PicoError, Result};
+use crate::security::ShellSecurityConfig;
 
 use super::{Tool, ToolContext};
 
@@ -22,25 +23,58 @@ use super::{Tool, ToolContext};
 /// - `command`: The shell command to execute (required)
 /// - `timeout`: Timeout in seconds, defaults to 60 (optional)
 ///
-/// # Security Note
-/// This tool executes arbitrary shell commands. It should be used with caution
-/// and appropriate safeguards in production environments.
+/// # Security
+/// This tool validates commands against a configurable blocklist to prevent
+/// dangerous operations. Use `ShellTool::permissive()` to disable security
+/// checks in trusted environments.
 ///
 /// # Example
 /// ```rust
-/// use picoclaw::tools::{Tool, ToolContext};
-/// use picoclaw::tools::shell::ShellTool;
+/// use zeptoclaw::tools::{Tool, ToolContext};
+/// use zeptoclaw::tools::shell::ShellTool;
 /// use serde_json::json;
 ///
 /// # tokio_test::block_on(async {
-/// let tool = ShellTool;
+/// let tool = ShellTool::new();
 /// let ctx = ToolContext::new();
 /// let result = tool.execute(json!({"command": "echo hello"}), &ctx).await;
 /// assert!(result.is_ok());
 /// assert_eq!(result.unwrap().trim(), "hello");
 /// # });
 /// ```
-pub struct ShellTool;
+pub struct ShellTool {
+    security_config: ShellSecurityConfig,
+}
+
+impl ShellTool {
+    /// Create a new shell tool with default security settings.
+    pub fn new() -> Self {
+        Self {
+            security_config: ShellSecurityConfig::new(),
+        }
+    }
+
+    /// Create a shell tool with custom security configuration.
+    pub fn with_security(security_config: ShellSecurityConfig) -> Self {
+        Self { security_config }
+    }
+
+    /// Create a shell tool with no security restrictions.
+    ///
+    /// # Warning
+    /// Only use in trusted environments where command injection is not a concern.
+    pub fn permissive() -> Self {
+        Self {
+            security_config: ShellSecurityConfig::permissive(),
+        }
+    }
+}
+
+impl Default for ShellTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[async_trait]
 impl Tool for ShellTool {
@@ -74,6 +108,9 @@ impl Tool for ShellTool {
             .get("command")
             .and_then(|v| v.as_str())
             .ok_or_else(|| PicoError::Tool("Missing 'command' argument".into()))?;
+
+        // Security check
+        self.security_config.validate_command(command)?;
 
         let timeout_secs = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(60);
 
@@ -128,7 +165,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_echo() {
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new();
 
         let result = tool.execute(json!({"command": "echo hello"}), &ctx).await;
@@ -138,7 +175,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_multiple_commands() {
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new();
 
         let result = tool
@@ -155,7 +192,7 @@ mod tests {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("test.txt"), "workspace file").unwrap();
 
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new().with_workspace(dir.path().to_str().unwrap());
 
         let result = tool.execute(json!({"command": "cat test.txt"}), &ctx).await;
@@ -167,7 +204,7 @@ mod tests {
     async fn test_shell_pwd_with_workspace() {
         let dir = tempdir().unwrap();
 
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new().with_workspace(dir.path().to_str().unwrap());
 
         let result = tool.execute(json!({"command": "pwd"}), &ctx).await;
@@ -178,13 +215,15 @@ mod tests {
         // On macOS, /tmp is symlinked to /private/tmp, so we compare canonical paths
         let expected = dir.path().canonicalize().unwrap();
         let actual_path = std::path::Path::new(output.trim());
-        let actual = actual_path.canonicalize().unwrap_or_else(|_| actual_path.to_path_buf());
+        let actual = actual_path
+            .canonicalize()
+            .unwrap_or_else(|_| actual_path.to_path_buf());
         assert_eq!(actual, expected);
     }
 
     #[tokio::test]
     async fn test_shell_stderr() {
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new();
 
         let result = tool
@@ -197,14 +236,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_combined_output() {
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new();
 
         let result = tool
-            .execute(
-                json!({"command": "echo stdout && echo stderr >&2"}),
-                &ctx,
-            )
+            .execute(json!({"command": "echo stdout && echo stderr >&2"}), &ctx)
             .await;
         assert!(result.is_ok());
         let output = result.unwrap();
@@ -215,7 +251,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_exit_code() {
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new();
 
         let result = tool.execute(json!({"command": "exit 42"}), &ctx).await;
@@ -226,7 +262,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_failed_command() {
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new();
 
         let result = tool
@@ -239,17 +275,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_missing_command() {
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new();
 
         let result = tool.execute(json!({}), &ctx).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Missing 'command'"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Missing 'command'"));
     }
 
     #[tokio::test]
     async fn test_shell_timeout() {
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new();
 
         let result = tool
@@ -261,11 +300,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_custom_timeout_success() {
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new();
 
         let result = tool
-            .execute(json!({"command": "sleep 0.1 && echo done", "timeout": 5}), &ctx)
+            .execute(
+                json!({"command": "sleep 0.1 && echo done", "timeout": 5}),
+                &ctx,
+            )
             .await;
         assert!(result.is_ok());
         assert!(result.unwrap().contains("done"));
@@ -273,7 +315,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_environment_variables() {
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new();
 
         let result = tool
@@ -285,7 +327,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_piped_commands() {
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new();
 
         let result = tool
@@ -297,11 +339,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_special_characters() {
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let ctx = ToolContext::new();
 
         let result = tool
-            .execute(json!({"command": "echo \"hello 'world'\""}) , &ctx)
+            .execute(json!({"command": "echo \"hello 'world'\""}), &ctx)
             .await;
         assert!(result.is_ok());
         assert!(result.unwrap().contains("hello 'world'"));
@@ -309,22 +351,66 @@ mod tests {
 
     #[test]
     fn test_shell_tool_name() {
-        assert_eq!(ShellTool.name(), "shell");
+        assert_eq!(ShellTool::new().name(), "shell");
     }
 
     #[test]
     fn test_shell_tool_description() {
-        assert!(!ShellTool.description().is_empty());
-        assert!(ShellTool.description().contains("shell"));
+        assert!(!ShellTool::new().description().is_empty());
+        assert!(ShellTool::new().description().contains("shell"));
     }
 
     #[test]
     fn test_shell_tool_parameters() {
-        let params = ShellTool.parameters();
+        let params = ShellTool::new().parameters();
         assert!(params.is_object());
         assert_eq!(params["type"], "object");
         assert!(params["properties"]["command"].is_object());
         assert!(params["properties"]["timeout"].is_object());
         assert_eq!(params["required"][0], "command");
+    }
+
+    #[tokio::test]
+    async fn test_dangerous_command_blocked() {
+        let tool = ShellTool::new();
+        let ctx = ToolContext::new();
+
+        let result = tool.execute(json!({"command": "rm -rf /"}), &ctx).await;
+        assert!(result.is_err());
+
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Security violation"));
+    }
+
+    #[tokio::test]
+    async fn test_permissive_mode_allows_dangerous() {
+        let tool = ShellTool::permissive();
+        let ctx = ToolContext::new();
+
+        // This would normally be blocked, but we're just testing the security bypass
+        // Don't actually execute rm -rf /!
+        let result = tool
+            .execute(json!({"command": "echo 'rm -rf /'"}), &ctx)
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_custom_security_config() {
+        let config = ShellSecurityConfig::new().block_pattern("forbidden");
+        let tool = ShellTool::with_security(config);
+        let ctx = ToolContext::new();
+
+        let result = tool
+            .execute(json!({"command": "echo forbidden"}), &ctx)
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_shell_tool_default() {
+        let tool = ShellTool::default();
+        // Should have security enabled by default
+        assert!(tool.security_config.enabled);
     }
 }
