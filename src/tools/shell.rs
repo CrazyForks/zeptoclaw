@@ -5,11 +5,11 @@
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::process::Stdio;
-use std::time::Duration;
-use tokio::process::Command;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::error::{PicoError, Result};
+use crate::runtime::{ContainerConfig, ContainerRuntime, NativeRuntime};
 use crate::security::ShellSecurityConfig;
 
 use super::{Tool, ToolContext};
@@ -44,29 +44,59 @@ use super::{Tool, ToolContext};
 /// ```
 pub struct ShellTool {
     security_config: ShellSecurityConfig,
+    runtime: Arc<dyn ContainerRuntime>,
 }
 
 impl ShellTool {
-    /// Create a new shell tool with default security settings.
+    /// Create a new shell tool with default security settings and native runtime.
     pub fn new() -> Self {
         Self {
             security_config: ShellSecurityConfig::new(),
+            runtime: Arc::new(NativeRuntime::new()),
         }
     }
 
-    /// Create a shell tool with custom security configuration.
+    /// Create a shell tool with custom security configuration and native runtime.
     pub fn with_security(security_config: ShellSecurityConfig) -> Self {
-        Self { security_config }
+        Self {
+            security_config,
+            runtime: Arc::new(NativeRuntime::new()),
+        }
     }
 
-    /// Create a shell tool with no security restrictions.
+    /// Create a shell tool with default security and custom runtime.
+    pub fn with_runtime(runtime: Arc<dyn ContainerRuntime>) -> Self {
+        Self {
+            security_config: ShellSecurityConfig::new(),
+            runtime,
+        }
+    }
+
+    /// Create a shell tool with custom security configuration and runtime.
+    pub fn with_security_and_runtime(
+        security_config: ShellSecurityConfig,
+        runtime: Arc<dyn ContainerRuntime>,
+    ) -> Self {
+        Self {
+            security_config,
+            runtime,
+        }
+    }
+
+    /// Create a shell tool with no security restrictions and native runtime.
     ///
     /// # Warning
     /// Only use in trusted environments where command injection is not a concern.
     pub fn permissive() -> Self {
         Self {
             security_config: ShellSecurityConfig::permissive(),
+            runtime: Arc::new(NativeRuntime::new()),
         }
+    }
+
+    /// Get the name of the runtime being used.
+    pub fn runtime_name(&self) -> &str {
+        self.runtime.name()
     }
 }
 
@@ -75,6 +105,7 @@ impl Default for ShellTool {
         Self::new()
     }
 }
+
 
 #[async_trait]
 impl Tool for ShellTool {
@@ -114,47 +145,25 @@ impl Tool for ShellTool {
 
         let timeout_secs = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(60);
 
-        // Build the command
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg(command);
+        // Build container configuration
+        let mut container_config = ContainerConfig::new().with_timeout(timeout_secs);
 
-        // Set working directory if workspace is specified
+        // Set working directory and mount if workspace is specified
         if let Some(ref workspace) = ctx.workspace {
-            cmd.current_dir(workspace);
+            let workspace_path = PathBuf::from(workspace);
+            container_config = container_config
+                .with_workdir(workspace_path.clone())
+                .with_mount(workspace_path.clone(), workspace_path, false);
         }
 
-        // Capture output
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-
-        // Execute with timeout
-        let output = tokio::time::timeout(Duration::from_secs(timeout_secs), cmd.output())
+        // Execute command via runtime
+        let output = self
+            .runtime
+            .execute(command, &container_config)
             .await
-            .map_err(|_| PicoError::Tool(format!("Command timed out after {}s", timeout_secs)))?
-            .map_err(|e| PicoError::Tool(format!("Failed to execute command: {}", e)))?;
+            .map_err(|e| PicoError::Tool(e.to_string()))?;
 
-        // Build result string
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        let mut result = String::new();
-
-        if !stdout.is_empty() {
-            result.push_str(&stdout);
-        }
-
-        if !stderr.is_empty() {
-            if !result.is_empty() {
-                result.push_str("\n--- stderr ---\n");
-            }
-            result.push_str(&stderr);
-        }
-
-        if !output.status.success() {
-            let exit_code = output.status.code().unwrap_or(-1);
-            result.push_str(&format!("\n[Exit code: {}]", exit_code));
-        }
-
-        Ok(result)
+        Ok(output.format())
     }
 }
 
@@ -412,5 +421,50 @@ mod tests {
         let tool = ShellTool::default();
         // Should have security enabled by default
         assert!(tool.security_config.enabled);
+    }
+
+    #[test]
+    fn test_shell_tool_runtime_name() {
+        let tool = ShellTool::new();
+        assert_eq!(tool.runtime_name(), "native");
+    }
+
+    #[tokio::test]
+    async fn test_shell_tool_with_custom_runtime() {
+        use crate::runtime::NativeRuntime;
+        use std::sync::Arc;
+
+        let runtime = Arc::new(NativeRuntime::new());
+        let tool = ShellTool::with_runtime(runtime);
+        let ctx = ToolContext::new();
+
+        let result = tool.execute(json!({"command": "echo test"}), &ctx).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("test"));
+    }
+
+    #[test]
+    fn test_shell_tool_with_security_and_runtime() {
+        use crate::runtime::NativeRuntime;
+        use std::sync::Arc;
+
+        let security = ShellSecurityConfig::permissive();
+        let runtime = Arc::new(NativeRuntime::new());
+        let tool = ShellTool::with_security_and_runtime(security, runtime);
+
+        assert_eq!(tool.runtime_name(), "native");
+        assert!(!tool.security_config.enabled);
+    }
+
+    #[test]
+    fn test_shell_tool_default_uses_native_runtime() {
+        let tool = ShellTool::default();
+        assert_eq!(tool.runtime_name(), "native");
+    }
+
+    #[tokio::test]
+    async fn test_shell_tool_permissive_uses_native_runtime() {
+        let tool = ShellTool::permissive();
+        assert_eq!(tool.runtime_name(), "native");
     }
 }
