@@ -11,16 +11,29 @@
 //! - `ToolContext`: Execution context (channel, chat_id, workspace)
 //! - `ToolRegistry`: Central registry for managing and executing tools
 //!
+//! # Built-in Tools
+//!
+//! - `EchoTool`: Simple echo tool for testing
+//! - `ReadFileTool`: Read file contents
+//! - `WriteFileTool`: Write content to a file
+//! - `ListDirTool`: List directory contents
+//! - `EditFileTool`: Edit a file by replacing text
+//! - `ShellTool`: Execute shell commands
+//!
 //! # Example
 //!
 //! ```rust
 //! use picoclaw::tools::{Tool, ToolContext, ToolRegistry, EchoTool};
+//! use picoclaw::tools::filesystem::ReadFileTool;
+//! use picoclaw::tools::shell::ShellTool;
 //! use serde_json::json;
 //!
 //! # tokio_test::block_on(async {
 //! // Create a registry and register tools
 //! let mut registry = ToolRegistry::new();
 //! registry.register(Box::new(EchoTool));
+//! registry.register(Box::new(ReadFileTool));
+//! registry.register(Box::new(ShellTool));
 //!
 //! // Execute a tool
 //! let result = registry.execute("echo", json!({"message": "Hello!"})).await;
@@ -28,11 +41,13 @@
 //!
 //! // Get tool definitions for LLM
 //! let definitions = registry.definitions();
-//! assert_eq!(definitions[0].name, "echo");
+//! assert!(definitions.len() >= 3);
 //! # });
 //! ```
 
+pub mod filesystem;
 mod registry;
+pub mod shell;
 mod types;
 
 pub use registry::ToolRegistry;
