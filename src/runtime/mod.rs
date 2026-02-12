@@ -6,10 +6,14 @@
 //! - Docker: Docker container isolation (Linux, macOS, Windows)
 //! - Apple Container: Apple's native container technology (macOS only)
 
+#[cfg(target_os = "macos")]
+pub mod apple;
 pub mod docker;
 pub mod native;
 pub mod types;
 
+#[cfg(target_os = "macos")]
+pub use apple::AppleContainerRuntime;
 pub use docker::DockerRuntime;
 pub use native::NativeRuntime;
 pub use types::{CommandOutput, ContainerConfig, ContainerRuntime, RuntimeError, RuntimeResult};
