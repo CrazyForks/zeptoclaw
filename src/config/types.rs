@@ -20,6 +20,8 @@ pub struct Config {
     pub gateway: GatewayConfig,
     /// Tools configuration
     pub tools: ToolsConfig,
+    /// Runtime configuration for container isolation
+    pub runtime: RuntimeConfig,
 }
 
 /// Agent configuration
@@ -338,6 +340,93 @@ impl Default for WebSearchConfig {
         Self {
             api_key: None,
             max_results: 5,
+        }
+    }
+}
+
+// ============================================================================
+// Runtime Configuration
+// ============================================================================
+
+/// Container runtime type for shell command execution
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RuntimeType {
+    /// Native execution (no container isolation)
+    #[default]
+    Native,
+    /// Docker container isolation
+    Docker,
+    /// Apple Container isolation (macOS only)
+    #[serde(rename = "apple")]
+    AppleContainer,
+}
+
+/// Runtime configuration for shell execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RuntimeConfig {
+    /// Type of container runtime to use
+    pub runtime_type: RuntimeType,
+    /// Docker-specific configuration
+    pub docker: DockerConfig,
+    /// Apple Container-specific configuration (macOS)
+    pub apple: AppleContainerConfig,
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            runtime_type: RuntimeType::Native,
+            docker: DockerConfig::default(),
+            apple: AppleContainerConfig::default(),
+        }
+    }
+}
+
+/// Docker runtime configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DockerConfig {
+    /// Docker image to use for shell execution
+    pub image: String,
+    /// Additional volume mounts (host:container format)
+    pub extra_mounts: Vec<String>,
+    /// Memory limit (e.g., "512m")
+    pub memory_limit: Option<String>,
+    /// CPU limit (e.g., "1.0")
+    pub cpu_limit: Option<String>,
+    /// Network mode (default: none for security)
+    pub network: String,
+}
+
+impl Default for DockerConfig {
+    fn default() -> Self {
+        Self {
+            image: "alpine:latest".to_string(),
+            extra_mounts: Vec::new(),
+            memory_limit: Some("512m".to_string()),
+            cpu_limit: Some("1.0".to_string()),
+            network: "none".to_string(),
+        }
+    }
+}
+
+/// Apple Container runtime configuration (macOS only)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AppleContainerConfig {
+    /// Container image/bundle path
+    pub image: String,
+    /// Additional directory mounts
+    pub extra_mounts: Vec<String>,
+}
+
+impl Default for AppleContainerConfig {
+    fn default() -> Self {
+        Self {
+            image: String::new(),
+            extra_mounts: Vec::new(),
         }
     }
 }
