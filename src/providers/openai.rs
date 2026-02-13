@@ -77,6 +77,9 @@ struct OpenAIRequest {
     /// Stop sequences
     #[serde(skip_serializing_if = "Option::is_none")]
     stop: Option<Vec<String>>,
+    /// Whether to stream the response using SSE
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream: Option<bool>,
 }
 
 /// A message in OpenAI's format.
@@ -182,6 +185,60 @@ struct OpenAIUsage {
     completion_tokens: u32,
 }
 
+/// OpenAI streaming chunk response body.
+#[derive(Debug, Deserialize)]
+struct OpenAIStreamChunk {
+    /// Delta choices for this chunk
+    #[serde(default)]
+    choices: Vec<OpenAIStreamChoice>,
+    /// Optional usage sent by some OpenAI-compatible backends
+    #[serde(default)]
+    usage: Option<OpenAIUsage>,
+}
+
+/// A streamed choice delta.
+#[derive(Debug, Deserialize)]
+struct OpenAIStreamChoice {
+    /// Delta payload for this chunk
+    #[serde(default)]
+    delta: OpenAIStreamDelta,
+}
+
+/// A streamed delta payload.
+#[derive(Debug, Default, Deserialize)]
+struct OpenAIStreamDelta {
+    /// Incremental text content
+    #[serde(default)]
+    content: Option<String>,
+    /// Incremental tool call fragments
+    #[serde(default)]
+    tool_calls: Option<Vec<OpenAIStreamToolCallDelta>>,
+}
+
+/// Streamed tool call fragment.
+#[derive(Debug, Deserialize)]
+struct OpenAIStreamToolCallDelta {
+    /// Tool call index in the current assistant message
+    index: usize,
+    /// Tool call id (usually first chunk only)
+    #[serde(default)]
+    id: Option<String>,
+    /// Function details
+    #[serde(default)]
+    function: Option<OpenAIStreamFunctionDelta>,
+}
+
+/// Streamed function call fragment.
+#[derive(Debug, Deserialize)]
+struct OpenAIStreamFunctionDelta {
+    /// Function name (usually first chunk only)
+    #[serde(default)]
+    name: Option<String>,
+    /// Incremental JSON arguments text
+    #[serde(default)]
+    arguments: Option<String>,
+}
+
 /// OpenAI API error response.
 #[derive(Debug, Deserialize)]
 struct OpenAIErrorResponse {
@@ -193,6 +250,13 @@ struct OpenAIErrorResponse {
 struct OpenAIError {
     message: String,
     r#type: String,
+}
+
+#[derive(Debug, Default)]
+struct PendingToolCall {
+    id: String,
+    name: String,
+    arguments: String,
 }
 
 /// Which token limit field to send to OpenAI.
@@ -432,7 +496,72 @@ fn build_request(
         temperature: options.temperature,
         top_p: options.top_p,
         stop: options.stop.clone(),
+        stream: None,
     }
+}
+
+fn apply_stream_chunk(
+    chunk: OpenAIStreamChunk,
+    assembled_content: &mut String,
+    pending_tool_calls: &mut Vec<PendingToolCall>,
+    usage: &mut Option<Usage>,
+) -> Vec<String> {
+    if let Some(chunk_usage) = chunk.usage {
+        *usage = Some(Usage::new(
+            chunk_usage.prompt_tokens,
+            chunk_usage.completion_tokens,
+        ));
+    }
+
+    let mut deltas = Vec::new();
+
+    for choice in chunk.choices {
+        if let Some(content) = choice.delta.content {
+            assembled_content.push_str(&content);
+            deltas.push(content);
+        }
+
+        if let Some(tool_call_deltas) = choice.delta.tool_calls {
+            for tool_delta in tool_call_deltas {
+                if pending_tool_calls.len() <= tool_delta.index {
+                    pending_tool_calls.resize_with(tool_delta.index + 1, PendingToolCall::default);
+                }
+
+                let pending = &mut pending_tool_calls[tool_delta.index];
+                if let Some(id) = tool_delta.id {
+                    pending.id = id;
+                }
+
+                if let Some(function) = tool_delta.function {
+                    if let Some(name) = function.name {
+                        pending.name = name;
+                    }
+                    if let Some(arguments) = function.arguments {
+                        pending.arguments.push_str(&arguments);
+                    }
+                }
+            }
+        }
+    }
+
+    deltas
+}
+
+fn finalize_tool_calls(pending_tool_calls: Vec<PendingToolCall>) -> Vec<LLMToolCall> {
+    pending_tool_calls
+        .into_iter()
+        .filter_map(|pending| {
+            if pending.id.is_empty() || pending.name.is_empty() {
+                None
+            } else {
+                Some(LLMToolCall::new(
+                    &pending.id,
+                    &pending.name,
+                    &pending.arguments,
+                ))
+            }
+        })
+        .collect()
 }
 
 /// Detect OpenAI's response when a model rejects `max_tokens` and requires
@@ -510,6 +639,164 @@ impl LLMProvider for OpenAIProvider {
             }
 
             // Try to parse as OpenAI error response
+            if let Ok(error_response) = serde_json::from_str::<OpenAIErrorResponse>(&error_text) {
+                return Err(ZeptoError::Provider(format!(
+                    "OpenAI API error ({}): {} - {}",
+                    status, error_response.error.r#type, error_response.error.message
+                )));
+            }
+
+            return Err(ZeptoError::Provider(format!(
+                "OpenAI API error ({}): {}",
+                status, error_text
+            )));
+        }
+    }
+
+    async fn chat_stream(
+        &self,
+        messages: Vec<Message>,
+        tools: Vec<ToolDefinition>,
+        model: Option<&str>,
+        options: ChatOptions,
+    ) -> Result<tokio::sync::mpsc::Receiver<super::StreamEvent>> {
+        use super::StreamEvent;
+        use futures::StreamExt;
+
+        let model = model.unwrap_or(DEFAULT_MODEL);
+        let mut token_field = self.token_field_for_model(model);
+        let mut retried_for_token_field = token_field == MaxTokenField::MaxCompletionTokens;
+
+        loop {
+            let mut request = build_request(model, &messages, &tools, &options, token_field);
+            request.stream = Some(true);
+
+            debug!(
+                "OpenAI streaming request to model {} with {:?}",
+                model, token_field
+            );
+
+            let response = self
+                .client
+                .post(format!("{}/chat/completions", self.api_base))
+                .header("Authorization", format!("Bearer {}", self.api_key))
+                .header("Content-Type", "application/json")
+                .json(&request)
+                .send()
+                .await
+                .map_err(|e| ZeptoError::Provider(format!("OpenAI request failed: {}", e)))?;
+
+            if response.status().is_success() {
+                let (tx, rx) = tokio::sync::mpsc::channel::<StreamEvent>(32);
+                let byte_stream = response.bytes_stream();
+
+                tokio::spawn(async move {
+                    let mut assembled_content = String::new();
+                    let mut pending_tool_calls: Vec<PendingToolCall> = Vec::new();
+                    let mut usage: Option<Usage> = None;
+                    let mut line_buffer = String::new();
+                    let mut done_seen = false;
+
+                    tokio::pin!(byte_stream);
+
+                    while let Some(chunk_result) = byte_stream.next().await {
+                        let chunk = match chunk_result {
+                            Ok(bytes) => bytes,
+                            Err(e) => {
+                                let _ = tx
+                                    .send(StreamEvent::Error(ZeptoError::Provider(format!(
+                                        "Stream read error: {}",
+                                        e
+                                    ))))
+                                    .await;
+                                return;
+                            }
+                        };
+
+                        let chunk_str = String::from_utf8_lossy(&chunk);
+                        line_buffer.push_str(&chunk_str);
+
+                        while let Some(newline_pos) = line_buffer.find('\n') {
+                            let line = line_buffer[..newline_pos].trim().to_string();
+                            line_buffer = line_buffer[newline_pos + 1..].to_string();
+
+                            if line.is_empty() || line.starts_with("event:") {
+                                continue;
+                            }
+
+                            let data = if let Some(stripped) = line.strip_prefix("data: ") {
+                                stripped
+                            } else if let Some(stripped) = line.strip_prefix("data:") {
+                                stripped
+                            } else {
+                                continue;
+                            };
+
+                            if data == "[DONE]" {
+                                done_seen = true;
+                                break;
+                            }
+
+                            let stream_chunk: OpenAIStreamChunk = match serde_json::from_str(data) {
+                                Ok(v) => v,
+                                Err(_) => continue,
+                            };
+
+                            let deltas = apply_stream_chunk(
+                                stream_chunk,
+                                &mut assembled_content,
+                                &mut pending_tool_calls,
+                                &mut usage,
+                            );
+
+                            for delta in deltas {
+                                if tx.send(StreamEvent::Delta(delta)).await.is_err() {
+                                    return;
+                                }
+                            }
+                        }
+
+                        if done_seen {
+                            break;
+                        }
+                    }
+
+                    let tool_calls = finalize_tool_calls(pending_tool_calls);
+                    if !tool_calls.is_empty() {
+                        let _ = tx.send(StreamEvent::ToolCalls(tool_calls)).await;
+                    }
+
+                    let _ = tx
+                        .send(StreamEvent::Done {
+                            content: assembled_content,
+                            usage,
+                        })
+                        .await;
+                });
+
+                return Ok(rx);
+            }
+
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+
+            // Retry once for models that require max_completion_tokens.
+            if status == StatusCode::BAD_REQUEST
+                && !retried_for_token_field
+                && token_field == MaxTokenField::MaxTokens
+                && options.max_tokens.is_some()
+                && is_max_tokens_unsupported_error(&error_text)
+            {
+                info!(
+                    "OpenAI model '{}' rejected max_tokens; retrying with max_completion_tokens",
+                    model
+                );
+                token_field = MaxTokenField::MaxCompletionTokens;
+                self.remember_token_field(model, MaxTokenField::MaxCompletionTokens);
+                retried_for_token_field = true;
+                continue;
+            }
+
             if let Ok(error_response) = serde_json::from_str::<OpenAIErrorResponse>(&error_text) {
                 return Err(ZeptoError::Provider(format!(
                     "OpenAI API error ({}): {} - {}",
@@ -764,6 +1051,7 @@ mod tests {
             temperature: Some(0.7),
             top_p: None,
             stop: None,
+            stream: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -796,6 +1084,7 @@ mod tests {
             temperature: None,
             top_p: None,
             stop: None,
+            stream: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -894,5 +1183,84 @@ mod tests {
             }
         }"#;
         assert!(!is_max_tokens_unsupported_error(err));
+    }
+
+    #[test]
+    fn test_apply_stream_chunk_collects_text_and_usage() {
+        let chunk = OpenAIStreamChunk {
+            choices: vec![OpenAIStreamChoice {
+                delta: OpenAIStreamDelta {
+                    content: Some("Hello".to_string()),
+                    tool_calls: None,
+                },
+            }],
+            usage: Some(OpenAIUsage {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+            }),
+        };
+
+        let mut assembled = String::new();
+        let mut pending_tool_calls = Vec::new();
+        let mut usage = None;
+
+        let deltas = apply_stream_chunk(chunk, &mut assembled, &mut pending_tool_calls, &mut usage);
+
+        assert_eq!(deltas, vec!["Hello".to_string()]);
+        assert_eq!(assembled, "Hello");
+        let usage = usage.expect("usage should be set");
+        assert_eq!(usage.prompt_tokens, 10);
+        assert_eq!(usage.completion_tokens, 5);
+        assert_eq!(usage.total_tokens, 15);
+    }
+
+    #[test]
+    fn test_apply_stream_chunk_assembles_tool_calls() {
+        let mut assembled = String::new();
+        let mut pending_tool_calls = Vec::new();
+        let mut usage = None;
+
+        let first = OpenAIStreamChunk {
+            choices: vec![OpenAIStreamChoice {
+                delta: OpenAIStreamDelta {
+                    content: None,
+                    tool_calls: Some(vec![OpenAIStreamToolCallDelta {
+                        index: 0,
+                        id: Some("call_1".to_string()),
+                        function: Some(OpenAIStreamFunctionDelta {
+                            name: Some("search".to_string()),
+                            arguments: Some(r#"{"q":""#.to_string()),
+                        }),
+                    }]),
+                },
+            }],
+            usage: None,
+        };
+
+        let second = OpenAIStreamChunk {
+            choices: vec![OpenAIStreamChoice {
+                delta: OpenAIStreamDelta {
+                    content: None,
+                    tool_calls: Some(vec![OpenAIStreamToolCallDelta {
+                        index: 0,
+                        id: None,
+                        function: Some(OpenAIStreamFunctionDelta {
+                            name: None,
+                            arguments: Some(r#"rust"}"#.to_string()),
+                        }),
+                    }]),
+                },
+            }],
+            usage: None,
+        };
+
+        let _ = apply_stream_chunk(first, &mut assembled, &mut pending_tool_calls, &mut usage);
+        let _ = apply_stream_chunk(second, &mut assembled, &mut pending_tool_calls, &mut usage);
+
+        let tool_calls = finalize_tool_calls(pending_tool_calls);
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].id, "call_1");
+        assert_eq!(tool_calls[0].name, "search");
+        assert_eq!(tool_calls[0].arguments, r#"{"q":"rust"}"#);
     }
 }
