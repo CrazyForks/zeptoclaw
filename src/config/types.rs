@@ -30,6 +30,8 @@ pub struct Config {
     pub runtime: RuntimeConfig,
     /// Containerized agent configuration
     pub container_agent: ContainerAgentConfig,
+    /// Swarm / multi-agent delegation configuration
+    pub swarm: SwarmConfig,
 }
 
 /// Agent configuration
@@ -550,6 +552,54 @@ impl Default for SkillsConfig {
 }
 
 // ============================================================================
+// Swarm / Multi-Agent Delegation Configuration
+// ============================================================================
+
+/// Swarm / multi-agent delegation configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SwarmConfig {
+    /// Whether delegation is enabled.
+    pub enabled: bool,
+    /// Maximum delegation depth (1 = no sub-sub-agents).
+    pub max_depth: u32,
+    /// Maximum concurrent sub-agents (for future parallel mode).
+    pub max_concurrent: u32,
+    /// Pre-defined role presets with tool whitelists.
+    pub roles: std::collections::HashMap<String, SwarmRole>,
+}
+
+impl Default for SwarmConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_depth: 1,
+            max_concurrent: 3,
+            roles: std::collections::HashMap::new(),
+        }
+    }
+}
+
+/// A pre-defined sub-agent role with system prompt and tool whitelist.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SwarmRole {
+    /// System prompt for this role.
+    pub system_prompt: String,
+    /// Allowed tool names (empty = all minus delegate/spawn).
+    pub tools: Vec<String>,
+}
+
+impl Default for SwarmRole {
+    fn default() -> Self {
+        Self {
+            system_prompt: String::new(),
+            tools: Vec::new(),
+        }
+    }
+}
+
+// ============================================================================
 // Runtime Configuration
 // ============================================================================
 
@@ -697,5 +747,57 @@ impl Default for ContainerAgentConfig {
             extra_mounts: Vec::new(),
             max_concurrent: 5,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_swarm_config_defaults() {
+        let config = SwarmConfig::default();
+        assert!(config.enabled);
+        assert_eq!(config.max_depth, 1);
+        assert_eq!(config.max_concurrent, 3);
+        assert!(config.roles.is_empty());
+    }
+
+    #[test]
+    fn test_swarm_config_deserialize() {
+        let json = r#"{
+            "enabled": true,
+            "roles": {
+                "researcher": {
+                    "system_prompt": "You are a researcher.",
+                    "tools": ["web_search", "web_fetch"]
+                }
+            }
+        }"#;
+        let config: SwarmConfig = serde_json::from_str(json).unwrap();
+        assert!(config.enabled);
+        assert_eq!(config.roles.len(), 1);
+        let role = config.roles.get("researcher").unwrap();
+        assert_eq!(role.tools, vec!["web_search", "web_fetch"]);
+    }
+
+    #[test]
+    fn test_swarm_role_defaults() {
+        let role = SwarmRole::default();
+        assert!(role.system_prompt.is_empty());
+        assert!(role.tools.is_empty());
+    }
+
+    #[test]
+    fn test_config_with_swarm_deserialize() {
+        let json = r#"{
+            "swarm": {
+                "enabled": false,
+                "max_depth": 2
+            }
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert!(!config.swarm.enabled);
+        assert_eq!(config.swarm.max_depth, 2);
     }
 }
