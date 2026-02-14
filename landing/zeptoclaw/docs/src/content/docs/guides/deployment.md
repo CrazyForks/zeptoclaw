@@ -8,6 +8,32 @@ tableOfContents:
 
 ZeptoClaw can be deployed anywhere a Linux binary can run. Choose the method that fits your infrastructure.
 
+## One-click deploy
+
+### Any VPS
+
+The fastest way to deploy ZeptoClaw is using the automated setup script:
+
+```bash
+curl -fsSL https://zeptoclaw.com/setup.sh | bash
+```
+
+This interactive wizard will:
+- Download the latest ZeptoClaw binary
+- Guide you through configuring your LLM provider (Anthropic or OpenAI)
+- Set up your messaging channel (Telegram, Slack, Discord, or Webhook)
+- Install and start a systemd service
+
+**Docker deployment:**
+```bash
+curl -fsSL https://zeptoclaw.com/setup.sh | bash -s -- --docker
+```
+
+**Uninstall:**
+```bash
+curl -fsSL https://zeptoclaw.com/setup.sh | bash -s -- --uninstall
+```
+
 ## Docker (single container)
 
 The simplest production deployment:

@@ -2,6 +2,35 @@
 
 Pre-built templates for deploying ZeptoClaw to various platforms.
 
+## One-Click Deploy
+
+### PaaS Platforms
+
+| Platform | Method |
+|----------|--------|
+| DigitalOcean | [![Deploy to DO](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/qhkm/zeptoclaw/tree/main) |
+| Railway | [![Deploy on Railway](https://railway.app/button.svg)](https://railway.com/deploy?template=https://github.com/qhkm/zeptoclaw) |
+| Render | [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/qhkm/zeptoclaw) |
+| Fly.io | [Deploy guide](https://fly.io/docs/launch/) with `deploy/fly.toml` |
+
+### Any VPS
+
+The fastest way to deploy on any Linux VPS:
+
+```bash
+curl -fsSL https://zeptoclaw.com/setup.sh | bash
+```
+
+This interactive wizard will:
+- Download the latest ZeptoClaw binary
+- Configure your LLM provider API key
+- Configure your messaging channel (Telegram, Slack, Discord, or Webhook)
+- Install and start a systemd service
+
+**Options:**
+- `--docker` - Deploy as a Docker container instead of bare binary
+- `--uninstall` - Clean removal of ZeptoClaw and all configuration
+
 ## Prerequisites
 
 - Docker installed (for building the image)
