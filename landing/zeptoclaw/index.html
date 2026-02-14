@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-S5CEXTQVP5"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-S5CEXTQVP5');
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ZeptoClaw — Ultra-Lightweight AI Assistant</title>
@@ -189,7 +197,7 @@
         .hero-mascot-wrap {
             position: relative;
             width: fit-content;
-            margin-bottom: 1.1rem;
+            margin: 0 auto 1.5rem auto;
         }
 
         .hero-mascot-wrap::after {
@@ -203,7 +211,7 @@
         }
 
         .hero-mascot {
-            width: clamp(124px, 17vw, 180px);
+            width: clamp(130px, 18vw, 200px);
             height: auto;
             display: block;
             filter: drop-shadow(0 14px 24px rgba(0, 0, 0, 0.38));
@@ -303,8 +311,7 @@
             }
 
             .hero-mascot {
-                margin-left: auto;
-                margin-right: auto;
+                width: clamp(120px, 35vw, 180px);
             }
 
             .hero-stats {

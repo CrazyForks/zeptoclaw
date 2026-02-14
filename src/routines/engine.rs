@@ -166,10 +166,6 @@ mod tests {
         }
     }
 
-    fn temp_store_path(suffix: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("zeptoclaw_engine_test_{}_{}.json", suffix, line!()))
-    }
-
     #[test]
     fn test_engine_from_empty_store() {
         let path = std::env::temp_dir().join(format!(

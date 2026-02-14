@@ -209,7 +209,6 @@ impl RoutineStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     fn make_routine(id: &str, trigger: Trigger, action: RoutineAction) -> Routine {
         Routine {
