@@ -152,5 +152,5 @@ Apache 2.0 — see [LICENSE](LICENSE)
   <em>ZeptoClaw — Because your AI agent shouldn't need more RAM than your text editor.</em>
 </p>
 <p align="center">
-  Built by <a href="https://github.com/qhkm">Kitakod Ventures</a>
+  Built by <a href="https://github.com/qhkm">Aisar Labs</a>
 </p>
