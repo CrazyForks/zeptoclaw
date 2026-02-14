@@ -186,10 +186,33 @@
             text-align: left;
         }
 
+        .hero-mascot-wrap {
+            position: relative;
+            width: fit-content;
+            margin-bottom: 1.1rem;
+        }
+
+        .hero-mascot-wrap::after {
+            content: '';
+            position: absolute;
+            inset: 10% 14%;
+            border-radius: 999px;
+            background: radial-gradient(circle, rgba(46, 196, 182, 0.22) 0%, transparent 72%);
+            z-index: -1;
+            filter: blur(6px);
+        }
+
         .hero-mascot {
-            width: 56px;
-            height: 56px;
-            margin-bottom: 1.25rem;
+            width: clamp(124px, 17vw, 180px);
+            height: auto;
+            display: block;
+            filter: drop-shadow(0 14px 24px rgba(0, 0, 0, 0.38));
+            animation: mascotFloat 6s ease-in-out infinite;
+        }
+
+        @keyframes mascotFloat {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-6px); }
         }
 
         .badge {
@@ -972,6 +995,70 @@
             user-select: none;
         }
 
+        /* Deploy section */
+        .deploy { padding: 5rem 0; }
+
+        .deploy-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            justify-content: center;
+            margin-bottom: 3rem;
+        }
+
+        .deploy-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--radius);
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            transition: all 0.2s ease;
+        }
+
+        .deploy-btn:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .deploy-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .deploy-vps {
+            max-width: 650px;
+            margin: 0 auto;
+        }
+
+        .deploy-vps h4 {
+            text-align: center;
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .deploy-providers {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: center;
+            margin-top: 1.5rem;
+        }
+
+        .deploy-providers span {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            padding: 0.25rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+        }
+
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after {
                 animation: none !important;
@@ -1050,7 +1137,9 @@
     <section class="hero">
         <div class="hero-content">
             <div class="hero-left">
-                <svg class="hero-mascot" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><line x1="24" y1="18" x2="18" y2="6" stroke="#67e8f9" stroke-width="2.5" stroke-linecap="round"/><line x1="40" y1="18" x2="46" y2="6" stroke="#67e8f9" stroke-width="2.5" stroke-linecap="round"/><circle cx="18" cy="5" r="2.5" fill="#67e8f9"/><circle cx="46" cy="5" r="2.5" fill="#67e8f9"/><ellipse cx="32" cy="38" rx="24" ry="20" fill="#374151"/><ellipse cx="32" cy="32" rx="20" ry="14" fill="#4a5568"/><ellipse cx="32" cy="36" rx="22" ry="16" fill="#3d4b5e"/><ellipse cx="22" cy="36" rx="8" ry="8.5" fill="#1e293b"/><ellipse cx="42" cy="36" rx="8" ry="8.5" fill="#1e293b"/><circle cx="22" cy="36" r="6" fill="#3b82f6"/><circle cx="42" cy="36" r="6" fill="#3b82f6"/><circle cx="22" cy="36" r="3.5" fill="#1d4ed8"/><circle cx="42" cy="36" r="3.5" fill="#1d4ed8"/><circle cx="20" cy="34" r="1.8" fill="#fff" opacity="0.9"/><circle cx="40" cy="34" r="1.8" fill="#fff" opacity="0.9"/><ellipse cx="32" cy="48" rx="4" ry="2" fill="#f472b6"/></svg>
+                <div class="hero-mascot-wrap">
+                    <img class="hero-mascot" src="mascot-no-bg.png" alt="Zippy — ZeptoClaw mascot">
+                </div>
                 <div class="badge">v0.2.0 — Now Available</div>
                 <h1>AI Agent Framework<br>in <span class="highlight">5 Megabytes</span></h1>
                 <p class="hero-subtitle">
@@ -1347,6 +1436,51 @@
             <div class="stat-item">
                 <div class="stat-value" data-count="1000" data-suffix="+">1000+</div>
                 <div class="stat-label">Tests Passing</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="deploy" id="deploy">
+        <div class="container">
+            <div class="section-header">
+                <div class="section-tag">Deploy</div>
+                <h2>Deploy Anywhere</h2>
+                <p class="section-subtitle">One click for managed platforms. One command for any VPS.</p>
+            </div>
+
+            <div class="deploy-buttons">
+                <a href="https://cloud.digitalocean.com/apps/new?repo=https://github.com/qhkm/zeptoclaw/tree/main" class="deploy-btn" target="_blank" rel="noopener">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 5.03 3.78 9.18 8.66 9.8v-3.6h-2.6v-3.6h2.6V11.8c0-2.57 1.53-3.99 3.87-3.99 1.12 0 2.29.2 2.29.2v2.52h-1.29c-1.27 0-1.67.79-1.67 1.6v1.93h2.84l-.45 3.6h-2.39v3.6c4.88-.62 8.66-4.77 8.66-9.8C21.95 6.45 17.5 2 12.04 2z"/></svg>
+                    DigitalOcean
+                </a>
+                <a href="https://railway.com/deploy?template=https://github.com/qhkm/zeptoclaw" class="deploy-btn" target="_blank" rel="noopener">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M.113 13.527c.057.178.275.265.443.175l5.994-3.203c.139-.074.157-.267.034-.365L.15 5.564a.278.278 0 0 0-.15-.037C0 5.683 0 5.952 0 6.222v6.937c0 .13.077.26.113.368zm23.773-3.054c-.057-.178-.275-.265-.443-.175l-5.994 3.203c-.139.074-.157.267-.034.365l6.434 4.57a.278.278 0 0 0 .15.037c0-.156 0-.425 0-.695V7.84c0-.13-.077-.26-.113-.367zM12 1.5L.587 7.803l11.413 8.1 11.413-8.1L12 1.5z"/></svg>
+                    Railway
+                </a>
+                <a href="https://render.com/deploy?repo=https://github.com/qhkm/zeptoclaw" class="deploy-btn" target="_blank" rel="noopener">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 2h7.2v7.2H2V2zm12.8 0H22v7.2h-7.2V2zM2 14.8h7.2V22H2v-7.2zm12.8 0H22V22h-7.2v-7.2z"/></svg>
+                    Render
+                </a>
+                <a href="https://fly.io/docs/hands-on/" class="deploy-btn" target="_blank" rel="noopener">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                    Fly.io
+                </a>
+            </div>
+
+            <div class="deploy-vps">
+                <h4>Any VPS &mdash; Hetzner, Contabo, AWS, Vultr, Linode</h4>
+                <div class="install-code">
+                    <span class="prompt">$</span> curl -fsSL https://zeptoclaw.com/setup.sh | bash
+                </div>
+                <div class="deploy-providers">
+                    <span>Hetzner</span>
+                    <span>Contabo</span>
+                    <span>AWS EC2</span>
+                    <span>Vultr</span>
+                    <span>Linode</span>
+                    <span>OVH</span>
+                    <span>Any Ubuntu/Debian VPS</span>
+                </div>
             </div>
         </div>
     </section>
