@@ -30,7 +30,16 @@ pub mod structured;
 mod types;
 
 /// Provider IDs currently supported by the runtime.
-pub const RUNTIME_SUPPORTED_PROVIDERS: &[&str] = &["anthropic", "openai"];
+pub const RUNTIME_SUPPORTED_PROVIDERS: &[&str] = &[
+    "anthropic",
+    "openai",
+    "openrouter",
+    "groq",
+    "zhipu",
+    "vllm",
+    "gemini",
+    "ollama",
+];
 
 pub use claude::ClaudeProvider;
 pub use fallback::FallbackProvider;

@@ -465,6 +465,8 @@ pub struct ProvidersConfig {
     pub vllm: Option<ProviderConfig>,
     /// Google Gemini configuration
     pub gemini: Option<ProviderConfig>,
+    /// Ollama (local models) configuration
+    pub ollama: Option<ProviderConfig>,
     /// Retry behavior for runtime provider calls
     pub retry: RetryConfig,
     /// Fallback behavior across multiple configured runtime providers

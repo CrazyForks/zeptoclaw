@@ -436,7 +436,7 @@ Enable runtime.allow_fallback_to_native to opt in to native fallback.",
 
     // Set up provider
     if let Some(runtime_provider) = resolve_runtime_provider(&config) {
-        match runtime_provider.name {
+        match runtime_provider.backend {
             "anthropic" => {
                 let provider = ClaudeProvider::new(&runtime_provider.api_key);
                 agent.set_provider(Box::new(provider)).await;
@@ -451,7 +451,10 @@ Enable runtime.allow_fallback_to_native to opt in to native fallback.",
             }
             _ => {}
         }
-        info!("Configured runtime provider: {}", runtime_provider.name);
+        info!(
+            "Configured runtime provider: {} (backend: {})",
+            runtime_provider.name, runtime_provider.backend
+        );
     }
 
     let unsupported = zeptoclaw::providers::configured_unsupported_provider_names(&config);

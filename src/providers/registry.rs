@@ -14,6 +14,10 @@ pub struct ProviderSpec {
     pub model_keywords: &'static [&'static str],
     /// Whether this provider is currently wired for runtime execution.
     pub runtime_supported: bool,
+    /// Default API base URL (None = native OpenAI endpoint).
+    pub default_base_url: Option<&'static str>,
+    /// The underlying backend ("anthropic" or "openai") for routing.
+    pub backend: &'static str,
 }
 
 /// Runtime-ready provider selection.
@@ -25,6 +29,8 @@ pub struct RuntimeProviderSelection {
     pub api_key: String,
     /// Optional provider base URL.
     pub api_base: Option<String>,
+    /// The underlying backend type ("anthropic" or "openai").
+    pub backend: &'static str,
 }
 
 /// Provider registry in priority order.
@@ -35,36 +41,57 @@ pub const PROVIDER_REGISTRY: &[ProviderSpec] = &[
         name: "anthropic",
         model_keywords: &["anthropic", "claude"],
         runtime_supported: true,
+        default_base_url: None,
+        backend: "anthropic",
     },
     ProviderSpec {
         name: "openai",
         model_keywords: &["openai", "gpt"],
         runtime_supported: true,
+        default_base_url: None,
+        backend: "openai",
     },
     ProviderSpec {
         name: "openrouter",
         model_keywords: &["openrouter"],
-        runtime_supported: false,
+        runtime_supported: true,
+        default_base_url: Some("https://openrouter.ai/api/v1"),
+        backend: "openai",
     },
     ProviderSpec {
         name: "groq",
         model_keywords: &["groq"],
-        runtime_supported: false,
+        runtime_supported: true,
+        default_base_url: Some("https://api.groq.com/openai/v1"),
+        backend: "openai",
     },
     ProviderSpec {
         name: "zhipu",
         model_keywords: &["zhipu", "glm", "zai"],
-        runtime_supported: false,
+        runtime_supported: true,
+        default_base_url: Some("https://open.bigmodel.cn/api/paas/v4"),
+        backend: "openai",
     },
     ProviderSpec {
         name: "vllm",
         model_keywords: &["vllm"],
-        runtime_supported: false,
+        runtime_supported: true,
+        default_base_url: Some("http://localhost:8000/v1"),
+        backend: "openai",
     },
     ProviderSpec {
         name: "gemini",
         model_keywords: &["gemini"],
-        runtime_supported: false,
+        runtime_supported: true,
+        default_base_url: Some("https://generativelanguage.googleapis.com/v1beta/openai"),
+        backend: "openai",
+    },
+    ProviderSpec {
+        name: "ollama",
+        model_keywords: &["ollama", "llama", "mistral", "phi", "qwen"],
+        runtime_supported: true,
+        default_base_url: Some("http://localhost:11434/v1"),
+        backend: "openai",
     },
 ];
 
@@ -77,6 +104,7 @@ fn provider_config_by_name<'a>(config: &'a Config, name: &str) -> Option<&'a Pro
         "zhipu" => config.providers.zhipu.as_ref(),
         "vllm" => config.providers.vllm.as_ref(),
         "gemini" => config.providers.gemini.as_ref(),
+        "ollama" => config.providers.ollama.as_ref(),
         _ => None,
     }
 }
@@ -131,18 +159,20 @@ pub fn resolve_runtime_providers(config: &Config) -> Vec<RuntimeProviderSelectio
             continue;
         };
 
-        let api_base = provider.and_then(|p| p.api_base.clone()).and_then(|base| {
+        let user_base = provider.and_then(|p| p.api_base.clone()).and_then(|base| {
             if base.is_empty() {
                 None
             } else {
                 Some(base)
             }
         });
+        let api_base = user_base.or_else(|| spec.default_base_url.map(String::from));
 
         resolved.push(RuntimeProviderSelection {
             name: spec.name,
             api_key: api_key.to_string(),
             api_base,
+            backend: spec.backend,
         });
     }
 
@@ -170,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn test_configured_unsupported_provider_names() {
+    fn test_configured_unsupported_provider_names_empty_when_all_supported() {
         let mut config = Config::default();
         config.providers.openrouter = Some(ProviderConfig {
             api_key: Some("sk-or".to_string()),
@@ -181,8 +211,9 @@ mod tests {
             ..Default::default()
         });
 
+        // All providers are now runtime-supported via OpenAI-compatible backend.
         let names = configured_unsupported_provider_names(&config);
-        assert_eq!(names, vec!["openrouter", "groq"]);
+        assert!(names.is_empty());
     }
 
     #[test]
@@ -249,5 +280,98 @@ mod tests {
             runtime_supported,
             crate::providers::RUNTIME_SUPPORTED_PROVIDERS
         );
+    }
+
+    #[test]
+    fn test_groq_resolves_with_default_base_url() {
+        let mut config = Config::default();
+        config.providers.groq = Some(ProviderConfig {
+            api_key: Some("gsk-test".to_string()),
+            ..Default::default()
+        });
+
+        let selected = resolve_runtime_provider(&config).expect("provider should resolve");
+        assert_eq!(selected.name, "groq");
+        assert_eq!(selected.backend, "openai");
+        assert_eq!(
+            selected.api_base.as_deref(),
+            Some("https://api.groq.com/openai/v1")
+        );
+    }
+
+    #[test]
+    fn test_ollama_resolves_with_default_base_url() {
+        let mut config = Config::default();
+        config.providers.ollama = Some(ProviderConfig {
+            api_key: Some("ollama".to_string()),
+            ..Default::default()
+        });
+
+        let selected = resolve_runtime_provider(&config).expect("provider should resolve");
+        assert_eq!(selected.name, "ollama");
+        assert_eq!(selected.backend, "openai");
+        assert_eq!(
+            selected.api_base.as_deref(),
+            Some("http://localhost:11434/v1")
+        );
+    }
+
+    #[test]
+    fn test_gemini_resolves_with_default_base_url() {
+        let mut config = Config::default();
+        config.providers.gemini = Some(ProviderConfig {
+            api_key: Some("AIza-test".to_string()),
+            ..Default::default()
+        });
+
+        let selected = resolve_runtime_provider(&config).expect("provider should resolve");
+        assert_eq!(selected.name, "gemini");
+        assert_eq!(selected.backend, "openai");
+        assert!(selected.api_base.as_deref().unwrap().contains("generativelanguage"));
+    }
+
+    #[test]
+    fn test_user_base_url_overrides_default() {
+        let mut config = Config::default();
+        config.providers.groq = Some(ProviderConfig {
+            api_key: Some("gsk-test".to_string()),
+            api_base: Some("https://custom.groq.example/v1".to_string()),
+            ..Default::default()
+        });
+
+        let selected = resolve_runtime_provider(&config).expect("provider should resolve");
+        assert_eq!(selected.name, "groq");
+        assert_eq!(
+            selected.api_base.as_deref(),
+            Some("https://custom.groq.example/v1")
+        );
+    }
+
+    #[test]
+    fn test_anthropic_has_no_default_base_url() {
+        let mut config = Config::default();
+        config.providers.anthropic = Some(ProviderConfig {
+            api_key: Some("sk-ant".to_string()),
+            ..Default::default()
+        });
+
+        let selected = resolve_runtime_provider(&config).expect("provider should resolve");
+        assert_eq!(selected.name, "anthropic");
+        assert_eq!(selected.backend, "anthropic");
+        assert_eq!(selected.api_base, None);
+    }
+
+    #[test]
+    fn test_openai_has_no_default_base_url() {
+        let mut config = Config::default();
+        config.providers.openai = Some(ProviderConfig {
+            api_key: Some("sk-openai".to_string()),
+            ..Default::default()
+        });
+
+        let selected = resolve_runtime_provider(&config).expect("provider should resolve");
+        assert_eq!(selected.name, "openai");
+        assert_eq!(selected.backend, "openai");
+        assert_eq!(selected.api_base, None);
     }
 }
