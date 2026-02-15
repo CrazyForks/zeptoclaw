@@ -49,6 +49,8 @@ impl Tool for MemorySearchTool {
         "Search workspace memory markdown files and return relevant snippets."
     }
 
+    fn compact_description(&self) -> &str { "Search memory" }
+
     fn parameters(&self) -> Value {
         json!({
             "type": "object",
@@ -141,6 +143,8 @@ impl Tool for MemoryGetTool {
     fn description(&self) -> &str {
         "Read a memory markdown file from workspace memory paths."
     }
+
+    fn compact_description(&self) -> &str { "Read memory" }
 
     fn parameters(&self) -> Value {
         json!({

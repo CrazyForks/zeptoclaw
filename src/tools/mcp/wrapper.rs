@@ -61,6 +61,8 @@ impl Tool for McpToolWrapper {
         &self.description
     }
 
+    fn compact_description(&self) -> &str { self.description() }
+
     fn parameters(&self) -> serde_json::Value {
         self.input_schema.clone()
     }
