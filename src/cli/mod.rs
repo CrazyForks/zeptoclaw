@@ -11,6 +11,7 @@ pub mod gateway;
 pub mod heartbeat;
 pub mod history;
 pub mod memory;
+pub mod migrate;
 pub mod onboard;
 pub mod skills;
 pub mod status;
@@ -143,6 +144,18 @@ enum Commands {
         /// Channel to notify on changes (telegram, slack, discord). Omit for stdout only.
         #[arg(long)]
         notify: Option<String>,
+    },
+    /// Migrate config and skills from an OpenClaw installation
+    Migrate {
+        /// Path to OpenClaw directory (auto-detected if omitted)
+        #[arg(long)]
+        from: Option<String>,
+        /// Accept all defaults without prompting
+        #[arg(long, short)]
+        yes: bool,
+        /// Preview what would be migrated without making changes
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -373,6 +386,13 @@ pub async fn run() -> Result<()> {
             notify,
         }) => {
             watch::cmd_watch(url, interval, notify).await?;
+        }
+        Some(Commands::Migrate {
+            from,
+            yes,
+            dry_run,
+        }) => {
+            migrate::cmd_migrate(from, yes, dry_run).await?;
         }
     }
 

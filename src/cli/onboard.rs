@@ -29,6 +29,16 @@ fn express_next_steps() -> String {
 /// silently, configures the LLM provider, saves, and prints guided next
 /// steps.  When `full` is true, runs the full 10-step interactive wizard.
 pub(crate) async fn cmd_onboard(full: bool) -> Result<()> {
+    // Check for existing OpenClaw installation
+    if let Some(oc_dir) = zeptoclaw::migrate::detect_openclaw_dir() {
+        println!(
+            "Detected OpenClaw installation at: {}",
+            oc_dir.display()
+        );
+        println!("Run 'zeptoclaw migrate' to import your config and skills.");
+        println!();
+    }
+
     // --- common: create directories ---
     let config_dir = Config::dir();
     std::fs::create_dir_all(&config_dir)

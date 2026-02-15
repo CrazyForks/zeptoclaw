@@ -26,6 +26,8 @@ tokio = { version = "1.35", features = ["full"] }
 # JSON handling for LLM API requests/responses and config files
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+# JSON5 parsing for OpenClaw config migration (comments, trailing commas, unquoted keys)
+json5 = "0.4"
 
 # =============================================================================
 # HTTP CLIENT
