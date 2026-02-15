@@ -431,7 +431,7 @@ echo '{"jsonrpc":"2.0","error":{"code":-1,"message":"something broke"},"id":1}'"
     #[cfg(unix)]
     #[tokio::test]
     async fn test_execute_non_zero_exit() {
-        let (_dir, script_path) = create_test_script("exit 1");
+        let (_dir, script_path) = create_test_script("cat > /dev/null\nexit 1");
         let tool = BinaryPluginTool::new(test_tool_def(), "test-plugin", script_path, 30);
         let ctx = ToolContext::new();
         let result = tool.execute(json!({}), &ctx).await;
@@ -460,7 +460,7 @@ echo '{"jsonrpc":"2.0","error":{"code":-1,"message":"something broke"},"id":1}'"
     #[cfg(unix)]
     #[tokio::test]
     async fn test_execute_malformed_json() {
-        let (_dir, script_path) = create_test_script("echo 'not json at all'");
+        let (_dir, script_path) = create_test_script("cat > /dev/null\necho 'not json at all'");
         let tool = BinaryPluginTool::new(test_tool_def(), "test-plugin", script_path, 30);
         let ctx = ToolContext::new();
         let result = tool.execute(json!({}), &ctx).await;
@@ -472,7 +472,7 @@ echo '{"jsonrpc":"2.0","error":{"code":-1,"message":"something broke"},"id":1}'"
     #[cfg(unix)]
     #[tokio::test]
     async fn test_execute_empty_stdout() {
-        let (_dir, script_path) = create_test_script("# produces nothing");
+        let (_dir, script_path) = create_test_script("cat > /dev/null\n# produces nothing");
         let tool = BinaryPluginTool::new(test_tool_def(), "test-plugin", script_path, 30);
         let ctx = ToolContext::new();
         let result = tool.execute(json!({}), &ctx).await;
