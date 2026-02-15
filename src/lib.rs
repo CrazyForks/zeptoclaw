@@ -13,6 +13,7 @@ pub mod health;
 pub mod heartbeat;
 pub mod hooks;
 pub mod memory;
+pub mod migrate;
 pub mod plugins;
 pub mod providers;
 pub mod routines;

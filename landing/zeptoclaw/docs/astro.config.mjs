@@ -48,6 +48,7 @@ export default defineConfig({
             { label: 'Agent Templates', link: '/guides/templates/' },
             { label: 'Deployment', link: '/guides/deployment/' },
             { label: 'Security', link: '/guides/security/' },
+            { label: 'Migrating from OpenClaw', link: '/guides/migration/' },
           ],
         },
       ],
