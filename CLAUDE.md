@@ -126,7 +126,7 @@ src/
 │   ├── gsheets.rs     # Google Sheets read/write
 │   ├── message.rs     # Proactive channel messaging
 │   ├── memory.rs      # Workspace memory get/search
-│   ├── longterm_memory.rs # Long-term memory tool (set/get/search/delete/list/categories)
+│   ├── longterm_memory.rs # Long-term memory tool (set/get/search/delete/list/categories/pin)
 │   ├── cron.rs        # Cron job scheduling
 │   ├── spawn.rs       # Background task delegation
 │   ├── delegate.rs    # Agent swarm delegation (DelegateTool)
@@ -210,8 +210,8 @@ Message input channels via `Channel` trait:
 - `ConversationHistory` - CLI session discovery, listing, fuzzy search by title/key, cleanup
 
 ### Agent (`src/agent/`)
-- `AgentLoop` - Core message processing loop with tool execution
-- `ContextBuilder` - System prompt and conversation context builder
+- `AgentLoop` - Core message processing loop with tool execution + pre-compaction memory flush
+- `ContextBuilder` - System prompt and conversation context builder + memory context injection
 - `TokenBudget` - Atomic per-session token budget tracker (lock-free via `AtomicU64`)
 - `ContextMonitor` - Token estimation (`words * 1.3 + 4/msg`), threshold-based compaction triggers
 - `Compactor` - Summarize (LLM-based) or Truncate strategies for context window management
@@ -219,6 +219,9 @@ Message input channels via `Channel` trait:
 ### Memory (`src/memory/`)
 - Workspace memory - Markdown search/read with chunked scoring
 - `LongTermMemory` - Persistent key-value store at `~/.zeptoclaw/memory/longterm.json` with categories, tags, access tracking
+- `decay_score()` on `MemoryEntry` - 30-day half-life decay with importance weighting; pinned entries exempt (always 1.0)
+- `build_memory_injection()` - Pinned + query-matched memory injection for system prompt (2000 char budget)
+- Pre-compaction memory flush - Silent LLM turn saves important facts before context compaction (10s timeout)
 
 ### Landing (`landing/zeptoclaw/index.html`)
 - Hero ambient animation, mascot eye/pupil motion, and magnetic CTA interactions
