@@ -10,6 +10,7 @@ pub mod config;
 pub mod gateway;
 pub mod heartbeat;
 pub mod history;
+pub mod memory;
 pub mod onboard;
 pub mod skills;
 pub mod status;
@@ -91,6 +92,11 @@ enum Commands {
         #[command(subcommand)]
         action: HistoryAction,
     },
+    /// Manage long-term memory
+    Memory {
+        #[command(subcommand)]
+        action: MemoryAction,
+    },
     /// Manage agent templates
     Template {
         #[command(subcommand)]
@@ -120,6 +126,41 @@ enum Commands {
         #[command(subcommand)]
         action: ConfigAction,
     },
+}
+
+#[derive(Subcommand)]
+pub enum MemoryAction {
+    /// List all stored memories
+    List {
+        /// Filter by category
+        #[arg(long)]
+        category: Option<String>,
+    },
+    /// Search memories by query
+    Search {
+        /// Search query (matches key, value, category, tags)
+        query: String,
+    },
+    /// Set a memory value
+    Set {
+        /// Memory key (e.g. "user:name", "preference:language")
+        key: String,
+        /// Memory value
+        value: String,
+        /// Category for grouping
+        #[arg(long, default_value = "general")]
+        category: String,
+        /// Comma-separated tags
+        #[arg(long)]
+        tags: Option<String>,
+    },
+    /// Delete a memory by key
+    Delete {
+        /// Memory key to delete
+        key: String,
+    },
+    /// Show memory statistics
+    Stats,
 }
 
 #[derive(Subcommand)]
@@ -272,6 +313,9 @@ pub async fn run() -> Result<()> {
         }
         Some(Commands::History { action }) => {
             history::cmd_history(action).await?;
+        }
+        Some(Commands::Memory { action }) => {
+            memory::cmd_memory(action).await?;
         }
         Some(Commands::Template { action }) => {
             template::cmd_template(action).await?;
