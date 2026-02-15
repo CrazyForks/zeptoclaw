@@ -39,12 +39,20 @@ use async_trait::async_trait;
 use futures::FutureExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 use crate::bus::{InboundMessage, MessageBus, OutboundMessage};
 use crate::config::TelegramConfig;
 use crate::error::{Result, ZeptoError};
+
+/// Maximum number of startup connectivity retries before giving up.
+const MAX_STARTUP_RETRIES: u32 = 10;
+/// Base delay (in seconds) for exponential backoff on startup retries.
+const BASE_RETRY_DELAY_SECS: u64 = 2;
+/// Maximum delay (in seconds) for exponential backoff on startup retries.
+const MAX_RETRY_DELAY_SECS: u64 = 120;
 
 use super::{BaseChannelConfig, Channel};
 
@@ -129,6 +137,14 @@ impl TelegramChannel {
         self.config.enabled
     }
 
+    /// Calculates the exponential backoff delay for a startup retry attempt.
+    fn startup_backoff_delay(attempt: u32) -> Duration {
+        let delay_secs = BASE_RETRY_DELAY_SECS
+            .saturating_mul(2u64.saturating_pow(attempt))
+            .min(MAX_RETRY_DELAY_SECS);
+        Duration::from_secs(delay_secs)
+    }
+
     /// Build a Telegram bot client with explicit proxy behavior.
     ///
     /// We disable automatic system proxy detection to avoid macOS dynamic-store
@@ -211,11 +227,55 @@ impl Channel for TelegramChannel {
             use teloxide::prelude::*;
 
             let task_result = std::panic::AssertUnwindSafe(async move {
-                // Perform a startup check so connectivity/token errors are surfaced
-                // as logged channel failures instead of dispatcher panics.
-                if let Err(e) = bot.get_me().await {
-                    error!("Telegram startup check failed: {}", e);
-                    return;
+                // Perform a startup check with retries so transient errors (DNS
+                // not ready, network interface still coming up) don't permanently
+                // kill the channel.  Permanent errors (invalid token, API errors)
+                // bail immediately on the first attempt.
+                let mut attempt: u32 = 0;
+                loop {
+                    match bot.get_me().await {
+                        Ok(_) => break,
+                        Err(e) => {
+                            use teloxide::RequestError;
+
+                            let is_transient = matches!(
+                                &e,
+                                RequestError::Network(_)
+                                    | RequestError::Io(_)
+                                    | RequestError::RetryAfter(_)
+                            );
+
+                            if !is_transient || attempt >= MAX_STARTUP_RETRIES {
+                                error!(
+                                    "Telegram startup check failed after {} attempt(s): {}",
+                                    attempt + 1,
+                                    e
+                                );
+                                return;
+                            }
+
+                            let delay = if let RequestError::RetryAfter(d) = &e {
+                                *d
+                            } else {
+                                TelegramChannel::startup_backoff_delay(attempt)
+                            };
+                            warn!(
+                                "Telegram startup check failed (attempt {}/{}), retrying in {}s: {}",
+                                attempt + 1,
+                                MAX_STARTUP_RETRIES,
+                                delay.as_secs(),
+                                e
+                            );
+                            tokio::select! {
+                                _ = shutdown_rx.recv() => {
+                                    info!("Telegram channel shutdown during startup retry");
+                                    return;
+                                }
+                                _ = tokio::time::sleep(delay) => {}
+                            }
+                            attempt += 1;
+                        }
+                    }
                 }
 
                 // Create the handler for incoming messages
@@ -544,5 +604,33 @@ mod tests {
         // Verify base config is set correctly
         assert_eq!(channel.base_config.name, "telegram");
         assert_eq!(channel.base_config.allowlist, vec!["allowed_user"]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Startup retry backoff
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_startup_backoff_delay_increases() {
+        let d0 = TelegramChannel::startup_backoff_delay(0);
+        let d1 = TelegramChannel::startup_backoff_delay(1);
+        let d2 = TelegramChannel::startup_backoff_delay(2);
+        assert_eq!(d0, Duration::from_secs(2));
+        assert_eq!(d1, Duration::from_secs(4));
+        assert_eq!(d2, Duration::from_secs(8));
+        assert!(d1 > d0);
+        assert!(d2 > d1);
+    }
+
+    #[test]
+    fn test_startup_backoff_delay_caps_at_max() {
+        let d_high = TelegramChannel::startup_backoff_delay(20);
+        assert_eq!(d_high, Duration::from_secs(MAX_RETRY_DELAY_SECS));
+    }
+
+    #[test]
+    fn test_startup_backoff_delay_no_overflow() {
+        let d = TelegramChannel::startup_backoff_delay(u32::MAX);
+        assert_eq!(d, Duration::from_secs(MAX_RETRY_DELAY_SECS));
     }
 }
