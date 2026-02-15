@@ -557,7 +557,8 @@ echo "{\"jsonrpc\":\"2.0\",\"result\":{\"output\":\"FOO=$MY_TEST_VAR\"},\"id\":1
     #[tokio::test]
     async fn test_execute_stderr_on_failure() {
         let (_dir, script_path) = create_test_script(
-            r#"echo "error details" >&2
+            r#"cat > /dev/null
+echo "error details" >&2
 exit 1"#,
         );
         let tool = BinaryPluginTool::new(test_tool_def(), "test-plugin", script_path, 30);
