@@ -576,8 +576,7 @@ mod tests {
         let mut ltm = crate::memory::longterm::LongTermMemory::with_path(path).unwrap();
         ltm.set("user:name", "Alice", "pinned", vec![], 1.0)
             .unwrap();
-        ltm.set("pref:lang", "Rust", "pinned", vec![], 1.0)
-            .unwrap();
+        ltm.set("pref:lang", "Rust", "pinned", vec![], 1.0).unwrap();
 
         let result = build_memory_injection(&ltm, "", 2000);
         assert!(result.contains("## Memory"));

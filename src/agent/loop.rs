@@ -27,7 +27,8 @@ use super::context::ContextBuilder;
 
 /// System prompt sent during the memory flush turn, instructing the LLM to
 /// persist important facts and deduplicate existing long-term memory entries.
-const MEMORY_FLUSH_PROMPT: &str = "Review the conversation above. Save any important facts, decisions, \
+const MEMORY_FLUSH_PROMPT: &str =
+    "Review the conversation above. Save any important facts, decisions, \
 user preferences, or learnings to long-term memory using the longterm_memory tool. \
 Also review existing memories for duplicates — merge or delete stale entries. \
 Be selective: only save what would be useful in future conversations.";
@@ -1035,7 +1036,10 @@ impl AgentLoop {
                 return;
             }
             Err(_) => {
-                tracing::warn!("memory_flush: timed out after {}s", MEMORY_FLUSH_TIMEOUT_SECS);
+                tracing::warn!(
+                    "memory_flush: timed out after {}s",
+                    MEMORY_FLUSH_TIMEOUT_SECS
+                );
                 return;
             }
         };

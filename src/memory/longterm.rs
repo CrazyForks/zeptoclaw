@@ -91,7 +91,14 @@ impl LongTermMemory {
     /// Upsert a memory entry. If the key already exists, the value, category,
     /// tags, and importance are updated and `last_accessed` is refreshed. The entry is
     /// persisted to disk immediately.
-    pub fn set(&mut self, key: &str, value: &str, category: &str, tags: Vec<String>, importance: f32) -> Result<()> {
+    pub fn set(
+        &mut self,
+        key: &str,
+        value: &str,
+        category: &str,
+        tags: Vec<String>,
+        importance: f32,
+    ) -> Result<()> {
         let now = now_timestamp();
 
         if let Some(existing) = self.entries.get_mut(key) {
@@ -169,7 +176,10 @@ impl LongTermMemory {
             match (a_exact, b_exact) {
                 (true, false) => std::cmp::Ordering::Less,
                 (false, true) => std::cmp::Ordering::Greater,
-                _ => b.decay_score().partial_cmp(&a.decay_score()).unwrap_or(std::cmp::Ordering::Equal),
+                _ => b
+                    .decay_score()
+                    .partial_cmp(&a.decay_score())
+                    .unwrap_or(std::cmp::Ordering::Equal),
             }
         });
 
@@ -356,8 +366,14 @@ mod tests {
     #[test]
     fn test_set_and_get() {
         let (mut mem, _dir) = temp_memory();
-        mem.set("user:name", "Alice", "user", vec!["identity".to_string()], 1.0)
-            .unwrap();
+        mem.set(
+            "user:name",
+            "Alice",
+            "user",
+            vec!["identity".to_string()],
+            1.0,
+        )
+        .unwrap();
 
         let entry = mem.get("user:name").unwrap();
         assert_eq!(entry.value, "Alice");
@@ -451,7 +467,8 @@ mod tests {
         let (mut mem, _dir) = temp_memory();
         mem.set("key1", "Rust programming language", "fact", vec![], 1.0)
             .unwrap();
-        mem.set("key2", "Python scripting", "fact", vec![], 1.0).unwrap();
+        mem.set("key2", "Python scripting", "fact", vec![], 1.0)
+            .unwrap();
 
         let results = mem.search("Rust");
         assert_eq!(results.len(), 1);
@@ -469,8 +486,14 @@ mod tests {
             1.0,
         )
         .unwrap();
-        mem.set("key2", "other value", "test", vec!["personal".to_string()], 1.0)
-            .unwrap();
+        mem.set(
+            "key2",
+            "other value",
+            "test",
+            vec!["personal".to_string()],
+            1.0,
+        )
+        .unwrap();
 
         let results = mem.search("important");
         assert_eq!(results.len(), 1);
@@ -480,8 +503,14 @@ mod tests {
     #[test]
     fn test_search_case_insensitive() {
         let (mut mem, _dir) = temp_memory();
-        mem.set("Key1", "Hello World", "Test", vec!["MyTag".to_string()], 1.0)
-            .unwrap();
+        mem.set(
+            "Key1",
+            "Hello World",
+            "Test",
+            vec!["MyTag".to_string()],
+            1.0,
+        )
+        .unwrap();
 
         // Search with different casing.
         assert!(!mem.search("hello").is_empty());
@@ -573,8 +602,14 @@ mod tests {
         // Create and populate a store.
         {
             let mut mem = LongTermMemory::with_path(path.clone()).unwrap();
-            mem.set("user:name", "Alice", "user", vec!["identity".to_string()], 1.0)
-                .unwrap();
+            mem.set(
+                "user:name",
+                "Alice",
+                "user",
+                vec!["identity".to_string()],
+                1.0,
+            )
+            .unwrap();
             mem.set("fact:lang", "Rust", "fact", vec!["tech".to_string()], 1.0)
                 .unwrap();
         }
@@ -613,13 +648,18 @@ mod tests {
         let score = entry.decay_score();
 
         // Fresh entry with importance 1.0 should score very close to 1.0
-        assert!((score - 1.0).abs() < 0.01, "Fresh entry score was {}, expected ~1.0", score);
+        assert!(
+            (score - 1.0).abs() < 0.01,
+            "Fresh entry score was {}, expected ~1.0",
+            score
+        );
     }
 
     #[test]
     fn test_decay_score_pinned_exempt() {
         let (mut mem, _dir) = temp_memory();
-        mem.set("pinned_key", "value", "pinned", vec![], 1.0).unwrap();
+        mem.set("pinned_key", "value", "pinned", vec![], 1.0)
+            .unwrap();
 
         // Manually age the entry by setting last_accessed far in the past
         if let Some(entry) = mem.entries.get_mut("pinned_key") {
@@ -636,7 +676,8 @@ mod tests {
     #[test]
     fn test_decay_score_pinned_case_insensitive() {
         let (mut mem, _dir) = temp_memory();
-        mem.set("pinned_key", "value", "Pinned", vec![], 1.0).unwrap();
+        mem.set("pinned_key", "value", "Pinned", vec![], 1.0)
+            .unwrap();
 
         // Age the entry
         if let Some(entry) = mem.entries.get_mut("pinned_key") {
@@ -647,7 +688,11 @@ mod tests {
         let score = entry.decay_score();
 
         // "Pinned" with capital P should also be exempt
-        assert_eq!(score, 1.0, "Pinned (capital) entry should score 1.0, got {}", score);
+        assert_eq!(
+            score, 1.0,
+            "Pinned (capital) entry should score 1.0, got {}",
+            score
+        );
     }
 
     #[test]
@@ -664,19 +709,28 @@ mod tests {
         let score = entry.decay_score();
 
         // After 30 days with importance 1.0, score should be ~0.5 (half-life)
-        assert!((score - 0.5).abs() < 0.05, "30-day-old entry score was {}, expected ~0.5", score);
+        assert!(
+            (score - 0.5).abs() < 0.05,
+            "30-day-old entry score was {}, expected ~0.5",
+            score
+        );
     }
 
     #[test]
     fn test_decay_score_importance_scales() {
         let (mut mem, _dir) = temp_memory();
-        mem.set("low_importance", "value", "test", vec![], 0.5).unwrap();
+        mem.set("low_importance", "value", "test", vec![], 0.5)
+            .unwrap();
 
         let entry = mem.get_readonly("low_importance").unwrap();
         let score = entry.decay_score();
 
         // Fresh entry with importance 0.5 should score ~0.5
-        assert!((score - 0.5).abs() < 0.01, "Low importance entry score was {}, expected ~0.5", score);
+        assert!(
+            (score - 0.5).abs() < 0.01,
+            "Low importance entry score was {}, expected ~0.5",
+            score
+        );
     }
 
     #[test]
@@ -715,9 +769,18 @@ mod tests {
         assert_eq!(mem.count(), 1);
 
         // High importance entry should survive
-        assert!(mem.get_readonly("high").is_some(), "High importance entry should survive");
-        assert!(mem.get_readonly("medium").is_none(), "Medium importance entry should be removed");
-        assert!(mem.get_readonly("low").is_none(), "Low importance entry should be removed");
+        assert!(
+            mem.get_readonly("high").is_some(),
+            "High importance entry should survive"
+        );
+        assert!(
+            mem.get_readonly("medium").is_none(),
+            "Medium importance entry should be removed"
+        );
+        assert!(
+            mem.get_readonly("low").is_none(),
+            "Low importance entry should be removed"
+        );
     }
 
     #[test]

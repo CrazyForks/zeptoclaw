@@ -332,14 +332,18 @@ impl LongTermMemoryTool {
             .and_then(|v| v.as_str())
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| ZeptoError::Tool("Missing 'key' parameter for pin action".to_string()))?;
+            .ok_or_else(|| {
+                ZeptoError::Tool("Missing 'key' parameter for pin action".to_string())
+            })?;
 
         let value = args
             .get("value")
             .and_then(|v| v.as_str())
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| ZeptoError::Tool("Missing 'value' parameter for pin action".to_string()))?;
+            .ok_or_else(|| {
+                ZeptoError::Tool("Missing 'value' parameter for pin action".to_string())
+            })?;
 
         let tags: Vec<String> = args
             .get("tags")

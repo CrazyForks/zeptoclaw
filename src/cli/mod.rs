@@ -13,11 +13,11 @@ pub mod history;
 pub mod memory;
 pub mod migrate;
 pub mod onboard;
+pub mod secrets;
 pub mod skills;
 pub mod status;
 pub mod template;
 pub mod tools;
-pub mod secrets;
 pub mod watch;
 
 use anyhow::Result;
