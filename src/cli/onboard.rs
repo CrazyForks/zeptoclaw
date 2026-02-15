@@ -81,15 +81,15 @@ pub(crate) async fn cmd_onboard(full: bool) -> Result<()> {
 
         match choice.as_str() {
             "1" | "1." => {
-                configure_anthropic(&mut config)?;
+                configure_anthropic(&mut config).await?;
             }
             "2" | "2." => {
-                configure_openai(&mut config)?;
+                configure_openai(&mut config).await?;
             }
             "3" | "3." => {
-                configure_anthropic(&mut config)?;
+                configure_anthropic(&mut config).await?;
                 println!();
-                configure_openai(&mut config)?;
+                configure_openai(&mut config).await?;
             }
             "4" | "4." | "" => {
                 println!("Skipping API key setup. You can configure later by:");
@@ -158,15 +158,15 @@ pub(crate) async fn cmd_onboard(full: bool) -> Result<()> {
 
         match choice.as_str() {
             "1" | "1." => {
-                configure_anthropic(&mut config)?;
+                configure_anthropic(&mut config).await?;
             }
             "2" | "2." => {
-                configure_openai(&mut config)?;
+                configure_openai(&mut config).await?;
             }
             "3" | "3." => {
-                configure_anthropic(&mut config)?;
+                configure_anthropic(&mut config).await?;
                 println!();
-                configure_openai(&mut config)?;
+                configure_openai(&mut config).await?;
             }
             "4" | "4." | "" => {
                 println!("Skipping API key setup. You can configure later by:");
@@ -412,7 +412,7 @@ fn configure_heartbeat(config: &mut Config) -> Result<()> {
 }
 
 /// Configure Anthropic provider.
-fn configure_anthropic(config: &mut Config) -> Result<()> {
+async fn configure_anthropic(config: &mut Config) -> Result<()> {
     println!();
     println!("Anthropic (Claude) Setup");
     println!("------------------------");
@@ -424,6 +424,16 @@ fn configure_anthropic(config: &mut Config) -> Result<()> {
     let api_key = read_secret()?;
 
     if !api_key.is_empty() {
+        print!("  Validating API key...");
+        io::stdout().flush()?;
+        match super::common::validate_api_key("anthropic", &api_key, None).await {
+            Ok(()) => println!(" valid!"),
+            Err(e) => {
+                println!(" failed.");
+                println!("  Warning: {}", e);
+                println!("  Saving anyway -- you can fix this later.");
+            }
+        }
         let provider_config = config
             .providers
             .anthropic
@@ -441,7 +451,7 @@ fn configure_anthropic(config: &mut Config) -> Result<()> {
 }
 
 /// Configure OpenAI provider.
-fn configure_openai(config: &mut Config) -> Result<()> {
+async fn configure_openai(config: &mut Config) -> Result<()> {
     println!();
     println!("OpenAI Setup");
     println!("------------");
@@ -453,6 +463,22 @@ fn configure_openai(config: &mut Config) -> Result<()> {
     let api_key = read_secret()?;
 
     if !api_key.is_empty() {
+        print!("  Validating API key...");
+        io::stdout().flush()?;
+        // Use custom base URL for validation if one was previously configured
+        let existing_base = config
+            .providers
+            .openai
+            .as_ref()
+            .and_then(|p| p.api_base.as_deref());
+        match super::common::validate_api_key("openai", &api_key, existing_base).await {
+            Ok(()) => println!(" valid!"),
+            Err(e) => {
+                println!(" failed.");
+                println!("  Warning: {}", e);
+                println!("  Saving anyway -- you can fix this later.");
+            }
+        }
         let provider_config = config.providers.openai.get_or_insert_with(Default::default);
         provider_config.api_key = Some(api_key);
         // Set OpenAI model as default when OpenAI is configured (and Anthropic isn't)
