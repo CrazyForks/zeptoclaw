@@ -57,7 +57,7 @@ impl Tool for LongTermMemoryTool {
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["set", "get", "search", "delete", "list", "categories"],
+                    "enum": ["set", "get", "search", "delete", "list", "categories", "pin"],
                     "description": "Action to perform"
                 },
                 "key": {
@@ -76,6 +76,10 @@ impl Tool for LongTermMemoryTool {
                     "type": "array",
                     "items": { "type": "string" },
                     "description": "Optional tags for search and organization"
+                },
+                "importance": {
+                    "type": "number",
+                    "description": "Optional importance weight (0.0-2.0+, default 1.0). Higher values decay slower over time."
                 },
                 "query": {
                     "type": "string",
@@ -99,8 +103,9 @@ impl Tool for LongTermMemoryTool {
             "delete" => self.execute_delete(&args),
             "list" => self.execute_list(&args),
             "categories" => self.execute_categories(),
+            "pin" => self.execute_pin(&args),
             other => Err(ZeptoError::Tool(format!(
-                "Unknown longterm_memory action '{}'. Valid actions: set, get, search, delete, list, categories",
+                "Unknown longterm_memory action '{}'. Valid actions: set, get, search, delete, list, categories, pin",
                 other
             ))),
         }
@@ -148,6 +153,13 @@ impl LongTermMemoryTool {
             })
             .unwrap_or_default();
 
+        // Default importance to 1.0 if not specified
+        let importance = args
+            .get("importance")
+            .and_then(|v| v.as_f64())
+            .map(|f| f as f32)
+            .unwrap_or(1.0);
+
         let mut memory = self
             .memory
             .lock()
@@ -155,7 +167,7 @@ impl LongTermMemoryTool {
 
         // Check if this is an update or a new entry.
         let is_update = memory.get_readonly(key).is_some();
-        memory.set(key, value, category, tags)?;
+        memory.set(key, value, category, tags, importance)?;
 
         if is_update {
             Ok(format!("Updated memory '{}'", key))
@@ -312,6 +324,46 @@ impl LongTermMemoryTool {
             .map_err(|e| ZeptoError::Tool(format!("Failed to serialize categories: {}", e)))?;
 
         Ok(format!("{}\nCategories:\n{}", summary, json))
+    }
+
+    fn execute_pin(&self, args: &Value) -> Result<String> {
+        let key = args
+            .get("key")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                ZeptoError::Tool("Missing 'key' parameter for pin action".to_string())
+            })?;
+
+        let value = args
+            .get("value")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                ZeptoError::Tool("Missing 'value' parameter for pin action".to_string())
+            })?;
+
+        let tags: Vec<String> = args
+            .get("tags")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut memory = self
+            .memory
+            .lock()
+            .map_err(|e| ZeptoError::Tool(format!("Failed to acquire memory lock: {}", e)))?;
+
+        memory.set(key, value, "pinned", tags, 1.0)?;
+        Ok(format!("Pinned memory '{}'", key))
     }
 }
 
@@ -770,5 +822,100 @@ mod tests {
             .await
             .unwrap();
         assert!(result.contains("blue"));
+    }
+
+    #[tokio::test]
+    async fn test_pin_action() {
+        let (tool, _dir) = temp_tool();
+        let c = ctx();
+
+        let result = tool
+            .execute(
+                json!({
+                    "action": "pin",
+                    "key": "important:fact",
+                    "value": "This should never be forgotten",
+                    "tags": ["critical", "permanent"]
+                }),
+                &c,
+            )
+            .await
+            .unwrap();
+        assert!(result.contains("Pinned memory 'important:fact'"));
+
+        // Verify it's in "pinned" category
+        let result = tool
+            .execute(json!({"action": "get", "key": "important:fact"}), &c)
+            .await
+            .unwrap();
+        assert!(result.contains("This should never be forgotten"));
+        assert!(result.contains("pinned"));
+    }
+
+    #[tokio::test]
+    async fn test_pin_missing_key() {
+        let (tool, _dir) = temp_tool();
+        let c = ctx();
+
+        let result = tool
+            .execute(
+                json!({
+                    "action": "pin",
+                    "value": "some value"
+                }),
+                &c,
+            )
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Missing 'key'"));
+    }
+
+    #[tokio::test]
+    async fn test_pin_missing_value() {
+        let (tool, _dir) = temp_tool();
+        let c = ctx();
+
+        let result = tool
+            .execute(
+                json!({
+                    "action": "pin",
+                    "key": "some:key"
+                }),
+                &c,
+            )
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Missing 'value'"));
+    }
+
+    #[tokio::test]
+    async fn test_set_with_importance() {
+        let (tool, _dir) = temp_tool();
+        let c = ctx();
+
+        let result = tool
+            .execute(
+                json!({
+                    "action": "set",
+                    "key": "critical:data",
+                    "value": "Very important information",
+                    "category": "critical",
+                    "importance": 2.0
+                }),
+                &c,
+            )
+            .await
+            .unwrap();
+        assert!(result.contains("Stored memory 'critical:data'"));
+
+        // Verify it was stored
+        let result = tool
+            .execute(json!({"action": "get", "key": "critical:data"}), &c)
+            .await
+            .unwrap();
+        assert!(result.contains("Very important information"));
+        assert!(result.contains("critical"));
     }
 }
