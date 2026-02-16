@@ -99,7 +99,10 @@ impl LongTermMemory {
     }
 
     /// Create a long-term memory store with a custom searcher.
-    pub fn with_path_and_searcher(path: PathBuf, searcher: Arc<dyn MemorySearcher>) -> Result<Self> {
+    pub fn with_path_and_searcher(
+        path: PathBuf,
+        searcher: Arc<dyn MemorySearcher>,
+    ) -> Result<Self> {
         let entries = Self::load(&path)?;
         Ok(Self {
             entries,

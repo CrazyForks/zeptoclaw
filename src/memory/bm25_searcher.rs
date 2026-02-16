@@ -155,7 +155,9 @@ impl MemorySearcher for Bm25Searcher {
                 .insert(key.to_string(), count);
         }
 
-        index.doc_lengths.insert(key.to_string(), tokens.len() as u32);
+        index
+            .doc_lengths
+            .insert(key.to_string(), tokens.len() as u32);
         index.doc_count += 1;
 
         Ok(())

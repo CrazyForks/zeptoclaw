@@ -83,13 +83,21 @@ mod tests {
     #[test]
     fn test_score_exact_phrase_match() {
         let score = BuiltinSearcher.score("Hello World", "hello world");
-        assert!(score > 0.9, "Exact phrase match should score high: {}", score);
+        assert!(
+            score > 0.9,
+            "Exact phrase match should score high: {}",
+            score
+        );
     }
 
     #[test]
     fn test_score_partial_match() {
         let score = BuiltinSearcher.score("Rust programming language", "rust");
-        assert!(score > 0.3, "Partial match should score above zero: {}", score);
+        assert!(
+            score > 0.3,
+            "Partial match should score above zero: {}",
+            score
+        );
     }
 
     #[test]

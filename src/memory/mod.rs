@@ -1,8 +1,8 @@
 //! Workspace memory utilities (OpenClaw-style markdown memory).
 
-pub mod builtin_searcher;
 #[cfg(feature = "memory-bm25")]
 pub mod bm25_searcher;
+pub mod builtin_searcher;
 pub mod factory;
 pub mod longterm;
 pub mod traits;
@@ -465,10 +465,10 @@ fn truncate_chars(input: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::sync::Arc;
     use super::builtin_searcher::BuiltinSearcher;
+    use super::*;
     use crate::config::{MemoryBackend, MemoryCitationsMode};
+    use std::sync::Arc;
     use tempfile::tempdir;
 
     #[tokio::test]
