@@ -1,13 +1,15 @@
 //! Gateway command handler (multi-channel bot server).
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use tracing::{error, info, warn};
 
 use zeptoclaw::bus::MessageBus;
-use zeptoclaw::channels::{register_configured_channels, ChannelManager};
+use zeptoclaw::channels::{register_configured_channels, ChannelManager, WhatsAppChannel};
 use zeptoclaw::config::{Config, ContainerAgentBackend};
+use zeptoclaw::deps::{fetcher::RealFetcher, DepManager, HasDependencies};
 use zeptoclaw::health::{
     health_port, start_health_server, start_periodic_usage_flush, UsageMetrics,
 };
@@ -342,4 +344,23 @@ async fn validate_apple_available() -> Result<()> {
         ));
     }
     Ok(())
+}
+
+/// Collect dependencies from all enabled channels with bridge_managed=true.
+fn collect_enabled_channel_deps(config: &Config) -> Vec<zeptoclaw::deps::Dependency> {
+    let mut deps = Vec::new();
+
+    // WhatsApp
+    if let Some(ref wa_cfg) = config.channels.whatsapp {
+        if wa_cfg.enabled && wa_cfg.bridge_managed {
+            // Create temporary channel just to query dependencies
+            let temp_bus = Arc::new(MessageBus::new());
+            let channel = WhatsAppChannel::new(wa_cfg.clone(), temp_bus);
+            deps.extend(channel.dependencies());
+        }
+    }
+
+    // Future: Add Telegram, Discord, Slack if they declare dependencies
+
+    deps
 }
