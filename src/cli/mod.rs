@@ -204,6 +204,12 @@ pub enum MemoryAction {
     },
     /// Show memory statistics
     Stats,
+    /// Remove expired memories below decay threshold
+    Cleanup {
+        /// Decay score threshold (0.0-1.0). Entries below this are removed.
+        #[arg(long, default_value_t = 0.1)]
+        threshold: f32,
+    },
 }
 
 #[derive(Subcommand)]
