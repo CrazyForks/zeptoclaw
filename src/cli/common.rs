@@ -153,6 +153,15 @@ fn build_runtime_provider_chain(
 
     let mut providers_iter = providers.into_iter();
     let first = providers_iter.next()?;
+
+    // Only chain multiple providers when fallback is explicitly enabled.
+    // Without this gate, users who configure multiple API keys for different
+    // purposes (e.g. Anthropic for production, OpenAI for testing) would get
+    // unexpected automatic failover.
+    if !config.providers.fallback.enabled {
+        return Some((first, vec![provider_names[0]]));
+    }
+
     let provider_chain = providers_iter.fold(first, |primary, fallback| {
         Box::new(FallbackProvider::new(primary, fallback)) as Box<dyn LLMProvider>
     });
@@ -887,5 +896,25 @@ mod tests {
         let chain_name = provider.name();
         assert_eq!(chain_name.matches("->").count(), 2);
         assert!(chain_name.contains("openai"));
+    }
+
+    #[test]
+    fn test_build_runtime_provider_chain_no_chain_when_fallback_disabled() {
+        let mut config = Config::default();
+        config.providers.fallback.enabled = false;
+        config.providers.anthropic = Some(zeptoclaw::config::ProviderConfig {
+            api_key: Some("sk-ant".to_string()),
+            ..Default::default()
+        });
+        config.providers.openai = Some(zeptoclaw::config::ProviderConfig {
+            api_key: Some("sk-openai".to_string()),
+            ..Default::default()
+        });
+
+        let (provider, names) =
+            build_runtime_provider_chain(&config).expect("provider chain should resolve");
+        // Only the highest-priority provider is used
+        assert_eq!(names, vec!["anthropic"]);
+        assert_eq!(provider.name(), "claude");
     }
 }

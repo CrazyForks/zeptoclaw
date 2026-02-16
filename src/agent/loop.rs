@@ -1316,6 +1316,10 @@ impl AgentLoop {
                         );
                         let msg_ref = &msg;
                         async {
+                            // Fast-path: if this session is already processing a
+                            // message, queue instead of blocking the select loop.
+                            // The queued message is drained and re-published to
+                            // the bus after the active request completes.
                             if self.try_queue_or_process(msg_ref).await {
                                 return;
                             }

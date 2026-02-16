@@ -92,14 +92,6 @@ cargo fmt
 ./target/release/zeptoclaw watch https://example.com --interval 1h --notify telegram
 ```
 
-## Test Snapshot (2026-02-15)
-
-- `src/lib.rs`: 1566 tests (1561 passed, 5 ignored)
-- `src/main.rs`: 50 tests (all passed)
-- `tests/cli_smoke.rs`: 23 tests (all passed)
-- `tests/integration.rs`: 68 tests (all passed)
-- Doc tests: 140 tests (116 passed, 24 ignored)
-
 ## Architecture
 
 ```
