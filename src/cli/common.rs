@@ -9,14 +9,15 @@ use anyhow::{Context, Result};
 use tracing::{info, warn};
 
 use zeptoclaw::agent::{AgentLoop, ContextBuilder, RuntimeContext};
+use zeptoclaw::auth::{self, AuthMethod};
 use zeptoclaw::bus::MessageBus;
 use zeptoclaw::config::templates::{AgentTemplate, TemplateRegistry};
 use zeptoclaw::config::{Config, MemoryBackend, MemoryCitationsMode};
 use zeptoclaw::cron::CronService;
 use zeptoclaw::memory::factory::create_searcher;
 use zeptoclaw::providers::{
-    resolve_runtime_providers, ClaudeProvider, FallbackProvider, LLMProvider, OpenAIProvider,
-    RetryProvider, RuntimeProviderSelection,
+    provider_config_by_name, resolve_runtime_providers, ClaudeProvider, FallbackProvider,
+    LLMProvider, OpenAIProvider, RetryProvider, RuntimeProviderSelection,
 };
 use zeptoclaw::runtime::{create_runtime, NativeRuntime};
 use zeptoclaw::session::SessionManager;
@@ -124,7 +125,16 @@ fn provider_from_runtime_selection(
     selection: &RuntimeProviderSelection,
 ) -> Option<Box<dyn LLMProvider>> {
     match selection.backend {
-        "anthropic" => Some(Box::new(ClaudeProvider::new(&selection.api_key))),
+        "anthropic" => {
+            // Use credential-aware constructor when OAuth token is available
+            if selection.credential.is_bearer() {
+                Some(Box::new(ClaudeProvider::with_credential(
+                    selection.credential.clone(),
+                )))
+            } else {
+                Some(Box::new(ClaudeProvider::new(&selection.api_key)))
+            }
+        }
         "openai" => {
             let provider = if let Some(base_url) = selection.api_base.as_deref() {
                 OpenAIProvider::with_base_url(&selection.api_key, base_url)
@@ -251,6 +261,45 @@ fn apply_retry_wrapper(provider: Box<dyn LLMProvider>, config: &Config) -> Box<d
             .with_base_delay_ms(config.providers.retry.base_delay_ms)
             .with_max_delay_ms(config.providers.retry.max_delay_ms),
     )
+}
+
+fn provider_auth_method(config: &Config, name: &str) -> AuthMethod {
+    provider_config_by_name(config, name)
+        .map(|p| p.resolved_auth_method())
+        .unwrap_or_default()
+}
+
+async fn refresh_oauth_credentials_if_needed(config: &Config) {
+    let encryption = match zeptoclaw::security::encryption::resolve_master_key(false) {
+        Ok(enc) => enc,
+        Err(_) => return,
+    };
+
+    let store = auth::store::TokenStore::new(encryption);
+
+    for &provider in auth::oauth_supported_providers() {
+        let method = provider_auth_method(config, provider);
+        if !matches!(method, AuthMethod::OAuth | AuthMethod::Auto) {
+            continue;
+        }
+
+        let token = match store.load(provider) {
+            Ok(Some(token)) => token,
+            Ok(None) => continue,
+            Err(err) => {
+                warn!(provider = provider, error = %err, "Failed to load OAuth token from store");
+                continue;
+            }
+        };
+
+        if !token.expires_within(auth::refresh::REFRESH_BUFFER_SECS) {
+            continue;
+        }
+
+        if let Err(err) = auth::refresh::ensure_fresh_token(&store, provider).await {
+            warn!(provider = provider, error = %err, "Failed to refresh OAuth token");
+        }
+    }
 }
 
 fn build_skills_prompt(config: &Config) -> String {
@@ -767,6 +816,8 @@ Enable runtime.allow_fallback_to_native to opt in to native fallback.",
     info!("Registered {} tools", agent.tool_count().await);
 
     // Set up provider (supports multi-provider fallback chain in registry order)
+    refresh_oauth_credentials_if_needed(&config).await;
+
     if let Some((provider_chain, provider_names)) = build_runtime_provider_chain(&config) {
         let chain_label = provider_names.join(" -> ");
         let provider_count = provider_names.len();
