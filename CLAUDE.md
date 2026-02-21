@@ -127,6 +127,31 @@ Skip issue creation only for trivial changes (typo fixes, one-line tweaks).
 - If committing directly to main: close the issue with `gh issue close N --comment "Done in <commit-sha>"`
 - Update `CLAUDE.md` and `AGENTS.md` per the post-implementation checklist
 
+## Pre-Push Checklist (MANDATORY)
+
+Before EVERY `git push`, run these checks **in the worktree you are pushing from**. Do NOT skip any step. CI will reject the PR if these fail.
+
+```bash
+# 1. Format (MUST pass — CI fails on any diff)
+cargo fmt
+
+# 2. Clippy (MUST pass — CI fails on any warning)
+cargo clippy -- -D warnings
+
+# 3. Tests (MUST pass)
+cargo test --lib
+
+# 4. Verify clean format (no unstaged changes from fmt)
+cargo fmt -- --check
+```
+
+**When delegating to subagents:** The parent agent MUST run `cargo fmt` and `cargo fmt -- --check` after the subagent completes, before committing. Subagents frequently skip formatting.
+
+**Quick one-liner for CI parity:**
+```bash
+cargo fmt && cargo clippy -- -D warnings && cargo test --lib && cargo fmt -- --check
+```
+
 ## Architecture
 
 ```
