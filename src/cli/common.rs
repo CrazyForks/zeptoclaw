@@ -324,6 +324,23 @@ pub(crate) async fn create_agent_with_template(
             .await;
     }
 
+    // Register Google Workspace tool (deferred from kernel registrar because it
+    // needs async OAuth token resolution).
+    #[cfg(feature = "google")]
+    if filter.is_enabled("google") {
+        let google_token = resolve_google_token(&config).await;
+        if let Some(token) = google_token {
+            agent
+                .register_tool(Box::new(zeptoclaw::tools::GoogleTool::new(
+                    &token,
+                    &config.tools.google.default_calendar,
+                    config.tools.google.max_search_results,
+                )))
+                .await;
+            info!("Registered google tool");
+        }
+    }
+
     info!("Registered {} tools", agent.tool_count().await);
 
     // Set provider from kernel (already assembled: base → fallback → retry → quota)
