@@ -147,9 +147,15 @@ cargo fmt
 ./target/release/zeptoclaw panel uninstall           # Remove panel frontend
 
 # Release (requires cargo-release: cargo install cargo-release)
-cargo release patch          # preview bump 0.5.x → 0.5.x+1 (dry-run by default)
-cargo release minor          # preview bump 0.5.x → 0.6.0
+cargo release patch          # bug fixes only; no new user-visible capability (dry-run by default)
+cargo release minor          # backward-compatible new functionality
 cargo release patch --execute  # actually bump, commit, tag, push, publish to crates.io
+
+Release policy:
+- Use `patch` for backward-compatible bug fixes, reliability hardening, docs corrections, and internal refactors that do not add user-visible capability.
+- Use `minor` for backward-compatible new functionality such as new commands, flags, config fields, tools, providers, runtimes, channels, or other opt-in capabilities.
+- If an upgrade should only give existing users fixes, choose `patch`.
+- If an upgrade gives existing users new capabilities without requiring migration, choose `minor`.
 
 # Self-update
 ./target/release/zeptoclaw update              # update to latest

@@ -117,6 +117,13 @@ cargo bench --bench message_bus --no-run
 - Do not add performance numbers unless they are reproducible with repository commands.
 - If adding new commands or workflows, include a runnable example.
 
+## Release Versioning
+
+- Use `patch` for backward-compatible bug fixes, reliability hardening, docs corrections, and internal refactors that do not add user-visible capability.
+- Use `minor` for backward-compatible new functionality such as new commands, flags, config fields, tools, providers, runtimes, channels, or other opt-in capabilities.
+- If upgrading should only give existing users fixes, choose `patch`.
+- If upgrading gives existing users new capabilities without requiring migration, choose `minor`.
+
 ## Change Hygiene
 
 - Do not revert unrelated local changes.
